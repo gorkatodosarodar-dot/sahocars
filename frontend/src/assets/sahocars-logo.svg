@@ -1,0 +1,7 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Saho Cars">
+  <rect width="512" height="512" rx="80" fill="#ffffff"/>
+  <path d="M240 90c40-30 100-30 140 10 40 40 40 100 10 140l-50 60-210 110 60-200z" fill="#f3d26a" opacity="0.9"/>
+  <path d="M340 80c60 10 110 70 90 140-15 55-70 90-120 100l-40-50 30-80z" fill="#151515" opacity="0.7"/>
+  <text x="70" y="210" font-family="'Baloo 2', 'Fredoka One', 'Comic Sans MS', cursive" font-size="120" font-weight="700" fill="#45c2c4">Saho</text>
+  <text x="70" y="330" font-family="'Baloo 2', 'Fredoka One', 'Comic Sans MS', cursive" font-size="140" font-weight="700" fill="#2b2b2b">Cars</text>
+</svg>
