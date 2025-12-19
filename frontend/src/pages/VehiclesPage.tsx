@@ -167,7 +167,7 @@ export default function VehiclesPage() {
       </Card>
 
       <Card withBorder shadow="xs" radius="md">
-        <Table.ScrollContainer minWidth={720} type="native">
+        <Table.ScrollContainer minWidth={720}>
           <Table striped highlightOnHover>
             <Table.Thead>
               <Table.Tr>
