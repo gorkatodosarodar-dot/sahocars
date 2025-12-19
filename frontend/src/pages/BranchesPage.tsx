@@ -27,7 +27,7 @@ export default function BranchesPage() {
   return (
     <Stack gap="lg">
       <Title order={2}>Sucursales</Title>
-      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+      <SimpleGrid cols={{ base: 1, sm: 1, md: 2, lg: 3 }} spacing="md">
         {branches.map((branch) => {
           const summary = branch.id ? summaries[branch.id] : undefined;
           return (
