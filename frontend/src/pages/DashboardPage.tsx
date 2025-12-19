@@ -32,7 +32,7 @@ export default function DashboardPage() {
       </Group>
 
       <Card withBorder radius="md" shadow="sm">
-        <Group align="flex-end" gap="md">
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
           <DateInput
             label="Desde"
             placeholder="Fecha inicio"
@@ -40,6 +40,7 @@ export default function DashboardPage() {
             onChange={(value) =>
               setFilters((prev) => ({ ...prev, from: value ? value.toISOString().split("T")[0] : undefined }))
             }
+            w="100%"
           />
           <DateInput
             label="Hasta"
@@ -48,6 +49,7 @@ export default function DashboardPage() {
             onChange={(value) =>
               setFilters((prev) => ({ ...prev, to: value ? value.toISOString().split("T")[0] : undefined }))
             }
+            w="100%"
           />
           <Select
             label="Sucursal"
@@ -56,11 +58,14 @@ export default function DashboardPage() {
             data={branches.map((b) => ({ label: b.name, value: String(b.id) }))}
             value={filters.branchId ? String(filters.branchId) : null}
             onChange={(value) => setFilters((prev) => ({ ...prev, branchId: value ? Number(value) : undefined }))}
+            w="100%"
           />
-          <Button variant="light" onClick={() => setFilters({})}>
-            Limpiar filtros
-          </Button>
-        </Group>
+          <Group align="flex-end">
+            <Button variant="light" onClick={() => setFilters({})}>
+              Limpiar filtros
+            </Button>
+          </Group>
+        </SimpleGrid>
       </Card>
 
       <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">

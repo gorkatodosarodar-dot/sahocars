@@ -70,12 +70,12 @@ export default function VehiclesPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between">
+      <Group justify="space-between" gap="md" wrap="wrap">
         <div>
           <Title order={2}>Vehículos</Title>
           <Text c="dimmed">Listado con filtros y alta rápida</Text>
         </div>
-        <Group>
+        <Group gap="sm" wrap="wrap">
           <Button variant="light" loading={loading} onClick={fetchVehicles}>
             Refrescar
           </Button>
@@ -96,7 +96,7 @@ export default function VehiclesPage() {
       </Group>
 
       <Card withBorder shadow="xs" radius="md">
-        <SimpleGrid cols={{ base: 1, md: 4 }} spacing="md">
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
           <Select
             label="Estado"
             placeholder="Todos"
@@ -130,7 +130,7 @@ export default function VehiclesPage() {
         <Title order={4} mb="sm">
           Alta rápida
         </Title>
-        <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
+        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
           <TextInput
             label="Matrícula"
             value={form.license_plate ?? ""}
@@ -167,31 +167,33 @@ export default function VehiclesPage() {
       </Card>
 
       <Card withBorder shadow="xs" radius="md">
-        <Table striped highlightOnHover>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Matrícula</Table.Th>
-              <Table.Th>Marca</Table.Th>
-              <Table.Th>Modelo</Table.Th>
-              <Table.Th>Estado</Table.Th>
-              <Table.Th>Sucursal</Table.Th>
-              <Table.Th>Compra</Table.Th>
-              <Table.Th>Venta</Table.Th>
-              <Table.Th>Fecha venta</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {rows.length ? (
-              rows
-            ) : (
+        <Table.ScrollContainer minWidth={720}>
+          <Table striped highlightOnHover>
+            <Table.Thead>
               <Table.Tr>
-                <Table.Td colSpan={8}>
-                  <Text c="dimmed">No hay vehículos</Text>
-                </Table.Td>
+                <Table.Th>Matrícula</Table.Th>
+                <Table.Th>Marca</Table.Th>
+                <Table.Th>Modelo</Table.Th>
+                <Table.Th>Estado</Table.Th>
+                <Table.Th>Sucursal</Table.Th>
+                <Table.Th>Compra</Table.Th>
+                <Table.Th>Venta</Table.Th>
+                <Table.Th>Fecha venta</Table.Th>
               </Table.Tr>
-            )}
-          </Table.Tbody>
-        </Table>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.length ? (
+                rows
+              ) : (
+                <Table.Tr>
+                  <Table.Td colSpan={8}>
+                    <Text c="dimmed">No hay vehículos</Text>
+                  </Table.Td>
+                </Table.Tr>
+              )}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
       </Card>
     </Stack>
   );
