@@ -24,7 +24,7 @@ export default function DashboardPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between">
+      <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
         <div>
           <Title order={2}>Dashboard</Title>
           <Text c="dimmed">Gastos, ingresos y margen por fechas y sucursal</Text>
@@ -75,7 +75,7 @@ export default function DashboardPage() {
         <StatCard label="Margen" value={formatCurrency(summary?.margin)} color="#111" loading={loading} />
       </SimpleGrid>
 
-      <Group>
+      <Group gap="md" wrap="wrap">
         <ExportButton resource="vehicles" label="Exportar vehículos" />
         <ExportButton resource="expenses" label="Exportar gastos" />
         <ExportButton resource="sales" label="Exportar ventas" />

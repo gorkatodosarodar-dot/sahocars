@@ -64,11 +64,13 @@ export default function App() {
       </AppShell.Navbar>
 
       <AppShell.Main className="app-shell-main">
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/vehiculos" element={<VehiclesPage />} />
-          <Route path="/sucursales" element={<BranchesPage />} />
-        </Routes>
+        <div className="page-container">
+          <Routes>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/vehiculos" element={<VehiclesPage />} />
+            <Route path="/sucursales" element={<BranchesPage />} />
+          </Routes>
+        </div>
       </AppShell.Main>
     </AppShell>
   );
