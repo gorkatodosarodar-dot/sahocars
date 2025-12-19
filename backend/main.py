@@ -99,6 +99,28 @@ class Transfer(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class TransferCreate(SQLModel):
+    from_branch_id: Optional[int] = Field(default=None, foreign_key="branch.id")
+    to_branch_id: int = Field(foreign_key="branch.id")
+    transfer_date: date
+    notes: Optional[str] = None
+
+
+class ExpenseCreate(SQLModel):
+    concept: str
+    amount: float
+    expense_date: date
+    notes: Optional[str] = None
+
+
+class SaleCreate(SQLModel):
+    sale_price: float
+    sale_date: date
+    notes: Optional[str] = None
+    client_name: Optional[str] = None
+    client_tax_id: Optional[str] = None
+
+
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if DATABASE_URL.startswith("sqlite") else create_engine(DATABASE_URL)
 app = FastAPI(title="Sahocars API", version="0.1.0")
 
@@ -200,20 +222,20 @@ def update_vehicle(vehicle_id: int, data: Vehicle, session: Session = Depends(ge
 @app.post("/vehicles/{vehicle_id}/transfer", response_model=Transfer)
 def transfer_vehicle(
     vehicle_id: int,
-    transfer: Transfer,
+    transfer: TransferCreate,
     session: Session = Depends(get_session),
 ):
     vehicle = session.get(Vehicle, vehicle_id)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    transfer.vehicle_id = vehicle_id
-    session.add(transfer)
-    vehicle.location_id = transfer.to_branch_id
+    transfer_record = Transfer(vehicle_id=vehicle_id, **transfer.model_dump())
+    session.add(transfer_record)
+    vehicle.location_id = transfer_record.to_branch_id
     vehicle.updated_at = datetime.utcnow()
     session.add(vehicle)
     session.commit()
-    session.refresh(transfer)
-    return transfer
+    session.refresh(transfer_record)
+    return transfer_record
 
 
 @app.get("/vehicles/{vehicle_id}/expenses", response_model=List[Expense])
@@ -222,31 +244,31 @@ def list_expenses(vehicle_id: int, session: Session = Depends(get_session)):
 
 
 @app.post("/vehicles/{vehicle_id}/expenses", response_model=Expense)
-def add_expense(vehicle_id: int, expense: Expense, session: Session = Depends(get_session)):
+def add_expense(vehicle_id: int, expense: ExpenseCreate, session: Session = Depends(get_session)):
     if not session.get(Vehicle, vehicle_id):
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    expense.vehicle_id = vehicle_id
-    session.add(expense)
+    expense_record = Expense(vehicle_id=vehicle_id, **expense.model_dump())
+    session.add(expense_record)
     session.commit()
-    session.refresh(expense)
-    return expense
+    session.refresh(expense_record)
+    return expense_record
 
 
 @app.post("/vehicles/{vehicle_id}/sale", response_model=Sale)
-def register_sale(vehicle_id: int, sale: Sale, session: Session = Depends(get_session)):
+def register_sale(vehicle_id: int, sale: SaleCreate, session: Session = Depends(get_session)):
     vehicle = session.get(Vehicle, vehicle_id)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    sale.vehicle_id = vehicle_id
-    vehicle.sale_price = sale.sale_price
-    vehicle.sale_date = sale.sale_date
+    sale_record = Sale(vehicle_id=vehicle_id, **sale.model_dump())
+    vehicle.sale_price = sale_record.sale_price
+    vehicle.sale_date = sale_record.sale_date
     vehicle.state = VehicleState.SOLD
     vehicle.updated_at = datetime.utcnow()
-    session.add(sale)
+    session.add(sale_record)
     session.add(vehicle)
     session.commit()
-    session.refresh(sale)
-    return sale
+    session.refresh(sale_record)
+    return sale_record
 
 
 @app.get("/vehicles/{vehicle_id}/documents", response_model=List[Document])
