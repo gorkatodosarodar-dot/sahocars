@@ -144,8 +144,7 @@ export default function VehiclesPage() {
             onChange={(value) => setForm((prev) => ({ ...prev, purchase_price: typeof value === "number" ? value : null }))}
             min={0}
             step={100}
-            parser={(value) => value?.replace(/€/g, "") || ""}
-            formatter={(value) => (value ? `${value} €` : "")}
+            suffix=" €"
           />
           <Select
             label="Sucursal"
