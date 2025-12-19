@@ -1,0 +1,20 @@
+# Node
+node_modules/
+frontend/dist/
+
+# Python
+__pycache__/
+*.pyc
+
+# Environments
+.env
+.senv
+
+# Databases and storage
+*.db
+storage/
+
+# IDE
+.vscode/
+.idea/
+.DS_Store

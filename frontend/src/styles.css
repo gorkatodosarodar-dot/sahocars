@@ -1,0 +1,18 @@
+:root {
+  color: #1f2933;
+  background-color: #f9fafb;
+}
+
+body {
+  margin: 0;
+  background: #f6f7fb;
+}
+
+.logo {
+  height: 48px;
+  width: auto;
+}
+
+.app-shell-main {
+  padding: 1.5rem;
+}
