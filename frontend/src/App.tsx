@@ -19,6 +19,7 @@ export default function App() {
 
   return (
     <AppShell
+      className="app-shell-root"
       header={{ height: 72 }}
       navbar={{ width: 260, breakpoint: "sm", collapsed: { mobile: !opened } }}
       padding="md"
@@ -63,11 +64,13 @@ export default function App() {
       </AppShell.Navbar>
 
       <AppShell.Main className="app-shell-main">
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/vehiculos" element={<VehiclesPage />} />
-          <Route path="/sucursales" element={<BranchesPage />} />
-        </Routes>
+        <div className="page-container">
+          <Routes>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/vehiculos" element={<VehiclesPage />} />
+            <Route path="/sucursales" element={<BranchesPage />} />
+          </Routes>
+        </div>
       </AppShell.Main>
     </AppShell>
   );

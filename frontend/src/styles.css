@@ -8,11 +8,32 @@ body {
   background: #f6f7fb;
 }
 
+.app-shell-root,
+html,
+body,
+#root {
+  min-height: 100vh;
+}
+
 .logo {
   height: 48px;
   width: auto;
 }
 
 .app-shell-main {
-  padding: 1.5rem;
+  padding: clamp(1rem, 1vw + 0.75rem, 1.5rem);
+  min-height: calc(100vh - var(--app-shell-header-height, 72px));
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.page-container {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--mantine-spacing-lg, 1.25rem);
 }
