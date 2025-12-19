@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { api, Branch, DashboardSummary, formatCurrency } from "../lib/api";
-import { Card, Group, Loader, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Button, Card, Group, Loader, SimpleGrid, Stack, Text, TextInput, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 
 export default function BranchesPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [summaries, setSummaries] = useState<Record<number, DashboardSummary>>({});
   const [loading, setLoading] = useState(true);
+  const [newBranch, setNewBranch] = useState("");
 
-  useEffect(() => {
+  const loadBranches = () =>
     api.getBranches().then((items) => {
       setBranches(items);
       Promise.all(items.map((b) => api.getDashboard({ branchId: b.id }))).then((results) => {
@@ -22,11 +24,43 @@ export default function BranchesPage() {
         setLoading(false);
       });
     });
+
+  useEffect(() => {
+    loadBranches();
   }, []);
 
   return (
     <Stack gap="lg">
-      <Title order={2}>Sucursales</Title>
+      <Group justify="space-between" align="flex-end">
+        <Title order={2}>Sucursales</Title>
+        <Group gap="sm" wrap="wrap" align="flex-end">
+          <TextInput
+            label="Nueva sucursal"
+            placeholder="Nombre"
+            value={newBranch}
+            onChange={(e) => setNewBranch(e.target.value)}
+          />
+          <Button
+            onClick={async () => {
+              if (!newBranch.trim()) {
+                notifications.show({ title: "Nombre requerido", message: "Introduce un nombre para la sucursal", color: "yellow" });
+                return;
+              }
+              try {
+                const created = await api.createBranch({ name: newBranch.trim() });
+                setBranches((prev) => [...prev, created]);
+                setNewBranch("");
+                notifications.show({ title: "Sucursal creada", message: `Se añadió ${created.name}`, color: "teal" });
+                loadBranches();
+              } catch (error) {
+                notifications.show({ title: "Error", message: (error as Error).message, color: "red" });
+              }
+            }}
+          >
+            Crear sucursal
+          </Button>
+        </Group>
+      </Group>
       <SimpleGrid cols={{ base: 1, sm: 1, md: 2, lg: 3 }} spacing="md">
         {branches.map((branch) => {
           const summary = branch.id ? summaries[branch.id] : undefined;
