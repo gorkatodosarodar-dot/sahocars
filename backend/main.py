@@ -109,6 +109,18 @@ def list_branches(session: Session = Depends(get_session)):
     return session.exec(select(Branch)).all()
 
 
+@app.post("/branches", response_model=Branch, status_code=201)
+def create_branch(branch: Branch, session: Session = Depends(get_session)):
+    name = branch.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="El nombre de la sucursal es obligatorio")
+    new_branch = Branch(name=name)
+    session.add(new_branch)
+    session.commit()
+    session.refresh(new_branch)
+    return new_branch
+
+
 app.include_router(vehicles_router)
 
 
