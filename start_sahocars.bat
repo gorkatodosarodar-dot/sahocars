@@ -1,10 +1,12 @@
 @echo off
 setlocal
 
-rem Rutas base
+rem Rutas base (normaliza el path absoluto sin barra final)
 set "ROOT=%~dp0"
-set "BACKEND=%ROOT%backend"
-set "FRONTEND=%ROOT%frontend"
+for %%I in ("%ROOT%") do set "ROOT=%%~fI"
+if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
+set "BACKEND=%ROOT%\backend"
+set "FRONTEND=%ROOT%\frontend"
 
 echo === Preparando backend ===
 pushd "%BACKEND%"
