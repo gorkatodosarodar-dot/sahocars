@@ -20,8 +20,9 @@ export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState<{ state?: string; branchId?: number; from?: string; to?: string }>({});
-  const [form, setForm] = useState<Vehicle>({ state: "pendiente recepcion" });
+  const [filters, setFilters] = useState<{ status?: string; branchId?: number; from?: string; to?: string }>({});
+  const [form, setForm] = useState<Vehicle>({ status: "pendiente recepcion" });
+  const [branchForm, setBranchForm] = useState<string>("");
 
   const fetchVehicles = () => {
     setLoading(true);
@@ -32,7 +33,13 @@ export default function VehiclesPage() {
   };
 
   useEffect(() => {
-    api.getBranches().then(setBranches);
+    api.getBranches().then((items) => {
+      setBranches(items);
+      if (items.length && !form.branch_id) {
+        setForm((prev) => ({ ...prev, branch_id: items[0].id }));
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -42,9 +49,13 @@ export default function VehiclesPage() {
 
   const handleCreate = async () => {
     try {
-      await api.createVehicle(form);
+      await api.createVehicle({
+        ...form,
+        branch_id: form.branch_id ?? undefined,
+        purchase_date: form.purchase_date ?? new Date().toISOString().split("T")[0],
+      });
       notifications.show({ title: "Vehículo creado", message: "Se ha dado de alta el vehículo", color: "teal" });
-      setForm({ state: "pendiente recepcion" });
+      setForm({ status: "pendiente recepcion" });
       fetchVehicles();
     } catch (error) {
       notifications.show({ title: "Error", message: (error as Error).message, color: "red" });
@@ -58,8 +69,8 @@ export default function VehiclesPage() {
           <Table.Td>{vehicle.license_plate || "-"}</Table.Td>
           <Table.Td>{vehicle.brand || "-"}</Table.Td>
           <Table.Td>{vehicle.model || "-"}</Table.Td>
-          <Table.Td>{vehicle.state || "-"}</Table.Td>
-          <Table.Td>{vehicle.location_id ? branches.find((b) => b.id === vehicle.location_id)?.name : "-"}</Table.Td>
+          <Table.Td>{vehicle.status || "-"}</Table.Td>
+          <Table.Td>{vehicle.branch_id ? branches.find((b) => b.id === vehicle.branch_id)?.name : "-"}</Table.Td>
           <Table.Td>{formatCurrency(vehicle.purchase_price)}</Table.Td>
           <Table.Td>{formatCurrency(vehicle.sale_price)}</Table.Td>
           <Table.Td>{formatDate(vehicle.sale_date)}</Table.Td>
@@ -70,12 +81,12 @@ export default function VehiclesPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between">
+      <Group justify="space-between" gap="md" wrap="wrap">
         <div>
           <Title order={2}>Vehículos</Title>
           <Text c="dimmed">Listado con filtros y alta rápida</Text>
         </div>
-        <Group>
+        <Group gap="sm" wrap="wrap">
           <Button variant="light" loading={loading} onClick={fetchVehicles}>
             Refrescar
           </Button>
@@ -96,14 +107,14 @@ export default function VehiclesPage() {
       </Group>
 
       <Card withBorder shadow="xs" radius="md">
-        <SimpleGrid cols={{ base: 1, md: 4 }} spacing="md">
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
           <Select
             label="Estado"
             placeholder="Todos"
             data={vehicleStates.map((state) => ({ value: state, label: state }))}
-            value={filters.state || null}
+            value={filters.status || null}
             clearable
-            onChange={(value) => setFilters((prev) => ({ ...prev, state: value || undefined }))}
+            onChange={(value) => setFilters((prev) => ({ ...prev, status: value || undefined }))}
           />
           <Select
             label="Sucursal"
@@ -130,7 +141,12 @@ export default function VehiclesPage() {
         <Title order={4} mb="sm">
           Alta rápida
         </Title>
-        <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
+        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
+          <TextInput
+            label="VIN"
+            value={form.vin ?? ""}
+            onChange={(e) => setForm((prev) => ({ ...prev, vin: e.target.value }))}
+          />
           <TextInput
             label="Matrícula"
             value={form.license_plate ?? ""}
@@ -139,59 +155,108 @@ export default function VehiclesPage() {
           <TextInput label="Marca" value={form.brand ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, brand: e.target.value }))} />
           <TextInput label="Modelo" value={form.model ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))} />
           <NumberInput
+            label="Año"
+            value={form.year ?? undefined}
+            onChange={(value) => setForm((prev) => ({ ...prev, year: typeof value === "number" ? value : null }))}
+            min={1900}
+            max={2100}
+            step={1}
+          />
+          <NumberInput
+            label="Kilómetros"
+            value={form.km ?? undefined}
+            onChange={(value) => setForm((prev) => ({ ...prev, km: typeof value === "number" ? value : null }))}
+            min={0}
+            step={500}
+          />
+          <NumberInput
             label="Precio compra"
             value={form.purchase_price ?? undefined}
             onChange={(value) => setForm((prev) => ({ ...prev, purchase_price: typeof value === "number" ? value : null }))}
             min={0}
             step={100}
-            parser={(value) => value?.replace(/€/g, "") || ""}
-            formatter={(value) => (value ? `${value} €` : "")}
+            suffix=" €"
+          />
+          <DateInput
+            label="Fecha compra"
+            value={form.purchase_date ? new Date(form.purchase_date) : null}
+            onChange={(value) => setForm((prev) => ({ ...prev, purchase_date: value ? value.toISOString().split("T")[0] : null }))}
           />
           <Select
             label="Sucursal"
             placeholder="Selecciona"
             data={branches.map((b) => ({ value: String(b.id), label: b.name }))}
-            value={form.location_id ? String(form.location_id) : null}
-            onChange={(value) => setForm((prev) => ({ ...prev, location_id: value ? Number(value) : null }))}
+            value={form.branch_id ? String(form.branch_id) : null}
+            onChange={(value) => setForm((prev) => ({ ...prev, branch_id: value ? Number(value) : null }))}
           />
           <Select
             label="Estado"
             data={vehicleStates.map((state) => ({ value: state, label: state }))}
-            value={form.state || "pendiente recepcion"}
-            onChange={(value) => setForm((prev) => ({ ...prev, state: value || undefined }))}
+            value={form.status || "pendiente recepcion"}
+            onChange={(value) => setForm((prev) => ({ ...prev, status: value || undefined }))}
           />
         </SimpleGrid>
-        <Group justify="flex-end" mt="md">
-          <Button onClick={handleCreate}>Crear</Button>
+        <Group justify="space-between" gap="md" mt="md" align="flex-end">
+          <Group gap="sm" wrap="wrap" align="flex-end">
+            <TextInput
+              label="Nueva sucursal"
+              placeholder="Nombre"
+              value={branchForm}
+              onChange={(e) => setBranchForm(e.target.value)}
+            />
+            <Button
+              variant="light"
+              onClick={async () => {
+                if (!branchForm.trim()) {
+                  notifications.show({ title: "Nombre requerido", message: "Introduce un nombre de sucursal", color: "yellow" });
+                  return;
+                }
+                try {
+                  const created = await api.createBranch({ name: branchForm.trim() });
+                  setBranches((prev) => [...prev, created]);
+                  setBranchForm("");
+                  setForm((prev) => ({ ...prev, branch_id: created.id }));
+                  notifications.show({ title: "Sucursal creada", message: `Se añadió ${created.name}`, color: "teal" });
+                } catch (error) {
+                  notifications.show({ title: "Error", message: (error as Error).message, color: "red" });
+                }
+              }}
+            >
+              Crear sucursal
+            </Button>
+          </Group>
+          <Button onClick={handleCreate}>Crear vehículo</Button>
         </Group>
       </Card>
 
       <Card withBorder shadow="xs" radius="md">
-        <Table striped highlightOnHover>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Matrícula</Table.Th>
-              <Table.Th>Marca</Table.Th>
-              <Table.Th>Modelo</Table.Th>
-              <Table.Th>Estado</Table.Th>
-              <Table.Th>Sucursal</Table.Th>
-              <Table.Th>Compra</Table.Th>
-              <Table.Th>Venta</Table.Th>
-              <Table.Th>Fecha venta</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {rows.length ? (
-              rows
-            ) : (
+        <Table.ScrollContainer minWidth={720} type="native">
+          <Table striped highlightOnHover>
+            <Table.Thead>
               <Table.Tr>
-                <Table.Td colSpan={8}>
-                  <Text c="dimmed">No hay vehículos</Text>
-                </Table.Td>
+                <Table.Th>Matrícula</Table.Th>
+                <Table.Th>Marca</Table.Th>
+                <Table.Th>Modelo</Table.Th>
+                <Table.Th>Estado</Table.Th>
+                <Table.Th>Sucursal</Table.Th>
+                <Table.Th>Compra</Table.Th>
+                <Table.Th>Venta</Table.Th>
+                <Table.Th>Fecha venta</Table.Th>
               </Table.Tr>
-            )}
-          </Table.Tbody>
-        </Table>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.length ? (
+                rows
+              ) : (
+                <Table.Tr>
+                  <Table.Td colSpan={8}>
+                    <Text c="dimmed">No hay vehículos</Text>
+                  </Table.Td>
+                </Table.Tr>
+              )}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
       </Card>
     </Stack>
   );
