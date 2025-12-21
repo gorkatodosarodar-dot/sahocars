@@ -64,6 +64,11 @@ async function fetchJson<T>(path: string, options: RequestInit = {}): Promise<T>
 
 export const api = {
   getBranches: () => fetchJson<Branch[]>("/branches"),
+  createBranch: (payload: { name: string }) =>
+    fetchJson<Branch>("/branches", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   getDashboard: (params: { from?: string; to?: string; branchId?: number }) => {
     const search = new URLSearchParams();
     if (params.from) search.append("from_date", params.from);

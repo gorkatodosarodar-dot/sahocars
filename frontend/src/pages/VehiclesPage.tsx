@@ -35,7 +35,13 @@ export default function VehiclesPage() {
   };
 
   useEffect(() => {
-    api.getBranches().then(setBranches);
+    api.getBranches().then((items) => {
+      setBranches(items);
+      if (items.length && !form.branch_id) {
+        setForm((prev) => ({ ...prev, branch_id: items[0].id }));
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -45,7 +51,11 @@ export default function VehiclesPage() {
 
   const handleCreate = async () => {
     try {
-      await api.createVehicle(form);
+      await api.createVehicle({
+        ...form,
+        branch_id: form.branch_id ?? undefined,
+        purchase_date: form.purchase_date ?? new Date().toISOString().split("T")[0],
+      });
       notifications.show({ title: "Vehículo creado", message: "Se ha dado de alta el vehículo", color: "teal" });
       setForm({ status: "pendiente recepcion", purchase_date: new Date().toISOString().split("T")[0] });
       fetchVehicles();
@@ -73,12 +83,12 @@ export default function VehiclesPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between">
+      <Group justify="space-between" gap="md" wrap="wrap">
         <div>
           <Title order={2}>Vehículos</Title>
           <Text c="dimmed">Listado con filtros y alta rápida</Text>
         </div>
-        <Group>
+        <Group gap="sm" wrap="wrap">
           <Button variant="light" loading={loading} onClick={fetchVehicles}>
             Refrescar
           </Button>
@@ -99,7 +109,7 @@ export default function VehiclesPage() {
       </Group>
 
       <Card withBorder shadow="xs" radius="md">
-        <SimpleGrid cols={{ base: 1, md: 4 }} spacing="md">
+        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
           <Select
             label="Estado"
             placeholder="Todos"
@@ -133,7 +143,12 @@ export default function VehiclesPage() {
         <Title order={4} mb="sm">
           Alta rápida
         </Title>
-        <SimpleGrid cols={{ base: 1, md: 3 }} spacing="md">
+        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
+          <TextInput
+            label="VIN"
+            value={form.vin ?? ""}
+            onChange={(e) => setForm((prev) => ({ ...prev, vin: e.target.value }))}
+          />
           <TextInput
             label="Matrícula"
             value={form.license_plate ?? ""}
@@ -184,37 +199,67 @@ export default function VehiclesPage() {
             onChange={(value) => setForm((prev) => ({ ...prev, status: value || undefined }))}
           />
         </SimpleGrid>
-        <Group justify="flex-end" mt="md">
-          <Button onClick={handleCreate}>Crear</Button>
+        <Group justify="space-between" gap="md" mt="md" align="flex-end">
+          <Group gap="sm" wrap="wrap" align="flex-end">
+            <TextInput
+              label="Nueva sucursal"
+              placeholder="Nombre"
+              value={branchForm}
+              onChange={(e) => setBranchForm(e.target.value)}
+            />
+            <Button
+              variant="light"
+              onClick={async () => {
+                if (!branchForm.trim()) {
+                  notifications.show({ title: "Nombre requerido", message: "Introduce un nombre de sucursal", color: "yellow" });
+                  return;
+                }
+                try {
+                  const created = await api.createBranch({ name: branchForm.trim() });
+                  setBranches((prev) => [...prev, created]);
+                  setBranchForm("");
+                  setForm((prev) => ({ ...prev, branch_id: created.id }));
+                  notifications.show({ title: "Sucursal creada", message: `Se añadió ${created.name}`, color: "teal" });
+                } catch (error) {
+                  notifications.show({ title: "Error", message: (error as Error).message, color: "red" });
+                }
+              }}
+            >
+              Crear sucursal
+            </Button>
+          </Group>
+          <Button onClick={handleCreate}>Crear vehículo</Button>
         </Group>
       </Card>
 
       <Card withBorder shadow="xs" radius="md">
-        <Table striped highlightOnHover>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Matrícula</Table.Th>
-              <Table.Th>Marca</Table.Th>
-              <Table.Th>Modelo</Table.Th>
-              <Table.Th>Estado</Table.Th>
-              <Table.Th>Sucursal</Table.Th>
-              <Table.Th>Compra</Table.Th>
-              <Table.Th>Venta</Table.Th>
-              <Table.Th>Fecha venta</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {rows.length ? (
-              rows
-            ) : (
+        <Table.ScrollContainer minWidth={720} type="native">
+          <Table striped highlightOnHover>
+            <Table.Thead>
               <Table.Tr>
-                <Table.Td colSpan={8}>
-                  <Text c="dimmed">No hay vehículos</Text>
-                </Table.Td>
+                <Table.Th>Matrícula</Table.Th>
+                <Table.Th>Marca</Table.Th>
+                <Table.Th>Modelo</Table.Th>
+                <Table.Th>Estado</Table.Th>
+                <Table.Th>Sucursal</Table.Th>
+                <Table.Th>Compra</Table.Th>
+                <Table.Th>Venta</Table.Th>
+                <Table.Th>Fecha venta</Table.Th>
               </Table.Tr>
-            )}
-          </Table.Tbody>
-        </Table>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.length ? (
+                rows
+              ) : (
+                <Table.Tr>
+                  <Table.Td colSpan={8}>
+                    <Text c="dimmed">No hay vehículos</Text>
+                  </Table.Td>
+                </Table.Tr>
+              )}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
       </Card>
     </Stack>
   );
