@@ -15,7 +15,7 @@ router = APIRouter(prefix="/vehicles", tags=["vehicles"])
 
 @router.post("", response_model=VehicleRead, status_code=201)
 def create_vehicle(vehicle_data: VehicleCreate, session: Session = Depends(get_session)):
-    vehicle = Vehicle(**vehicle_data.model_dump())
+    vehicle = Vehicle(**vehicle_data.model_dump(exclude_none=True))
     session.add(vehicle)
     session.commit()
     session.refresh(vehicle)

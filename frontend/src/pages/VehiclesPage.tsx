@@ -20,8 +20,11 @@ export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(false);
-  const [filters, setFilters] = useState<{ state?: string; branchId?: number; from?: string; to?: string }>({});
-  const [form, setForm] = useState<Vehicle>({ state: "pendiente recepcion" });
+  const [filters, setFilters] = useState<{ status?: string; branchId?: number; from?: string; to?: string }>({});
+  const [form, setForm] = useState<Vehicle>({
+    status: "pendiente recepcion",
+    purchase_date: new Date().toISOString().split("T")[0],
+  });
 
   const fetchVehicles = () => {
     setLoading(true);
@@ -44,7 +47,7 @@ export default function VehiclesPage() {
     try {
       await api.createVehicle(form);
       notifications.show({ title: "Vehículo creado", message: "Se ha dado de alta el vehículo", color: "teal" });
-      setForm({ state: "pendiente recepcion" });
+      setForm({ status: "pendiente recepcion", purchase_date: new Date().toISOString().split("T")[0] });
       fetchVehicles();
     } catch (error) {
       notifications.show({ title: "Error", message: (error as Error).message, color: "red" });
@@ -58,8 +61,8 @@ export default function VehiclesPage() {
           <Table.Td>{vehicle.license_plate || "-"}</Table.Td>
           <Table.Td>{vehicle.brand || "-"}</Table.Td>
           <Table.Td>{vehicle.model || "-"}</Table.Td>
-          <Table.Td>{vehicle.state || "-"}</Table.Td>
-          <Table.Td>{vehicle.location_id ? branches.find((b) => b.id === vehicle.location_id)?.name : "-"}</Table.Td>
+          <Table.Td>{vehicle.status || "-"}</Table.Td>
+          <Table.Td>{vehicle.branch_id ? branches.find((b) => b.id === vehicle.branch_id)?.name : "-"}</Table.Td>
           <Table.Td>{formatCurrency(vehicle.purchase_price)}</Table.Td>
           <Table.Td>{formatCurrency(vehicle.sale_price)}</Table.Td>
           <Table.Td>{formatDate(vehicle.sale_date)}</Table.Td>
@@ -101,9 +104,9 @@ export default function VehiclesPage() {
             label="Estado"
             placeholder="Todos"
             data={vehicleStates.map((state) => ({ value: state, label: state }))}
-            value={filters.state || null}
+            value={filters.status || null}
             clearable
-            onChange={(value) => setFilters((prev) => ({ ...prev, state: value || undefined }))}
+            onChange={(value) => setFilters((prev) => ({ ...prev, status: value || undefined }))}
           />
           <Select
             label="Sucursal"
@@ -136,29 +139,49 @@ export default function VehiclesPage() {
             value={form.license_plate ?? ""}
             onChange={(e) => setForm((prev) => ({ ...prev, license_plate: e.target.value }))}
           />
+          <TextInput label="VIN" value={form.vin ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, vin: e.target.value }))} />
           <TextInput label="Marca" value={form.brand ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, brand: e.target.value }))} />
           <TextInput label="Modelo" value={form.model ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))} />
+          <NumberInput
+            label="Año"
+            value={form.year ?? undefined}
+            onChange={(value) => setForm((prev) => ({ ...prev, year: typeof value === "number" ? value : null }))}
+            min={1900}
+            max={new Date().getFullYear() + 1}
+          />
+          <NumberInput
+            label="Kilometraje"
+            value={form.km ?? undefined}
+            onChange={(value) => setForm((prev) => ({ ...prev, km: typeof value === "number" ? value : null }))}
+            min={0}
+            step={1000}
+          />
           <NumberInput
             label="Precio compra"
             value={form.purchase_price ?? undefined}
             onChange={(value) => setForm((prev) => ({ ...prev, purchase_price: typeof value === "number" ? value : null }))}
             min={0}
             step={100}
-            parser={(value) => value?.replace(/€/g, "") || ""}
-            formatter={(value) => (value ? `${value} €` : "")}
+          />
+          <DateInput
+            label="Fecha de compra"
+            value={form.purchase_date ? new Date(form.purchase_date) : null}
+            onChange={(value) =>
+              setForm((prev) => ({ ...prev, purchase_date: value ? value.toISOString().split("T")[0] : undefined }))
+            }
           />
           <Select
             label="Sucursal"
             placeholder="Selecciona"
             data={branches.map((b) => ({ value: String(b.id), label: b.name }))}
-            value={form.location_id ? String(form.location_id) : null}
-            onChange={(value) => setForm((prev) => ({ ...prev, location_id: value ? Number(value) : null }))}
+            value={form.branch_id ? String(form.branch_id) : null}
+            onChange={(value) => setForm((prev) => ({ ...prev, branch_id: value ? Number(value) : null }))}
           />
           <Select
             label="Estado"
             data={vehicleStates.map((state) => ({ value: state, label: state }))}
-            value={form.state || "pendiente recepcion"}
-            onChange={(value) => setForm((prev) => ({ ...prev, state: value || undefined }))}
+            value={form.status || "pendiente recepcion"}
+            onChange={(value) => setForm((prev) => ({ ...prev, status: value || undefined }))}
           />
         </SimpleGrid>
         <Group justify="flex-end" mt="md">
