@@ -21,8 +21,10 @@ export default function VehiclesPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(false);
   const [filters, setFilters] = useState<{ status?: string; branchId?: number; from?: string; to?: string }>({});
-  const [form, setForm] = useState<Vehicle>({ status: "pendiente recepcion" });
-  const [branchForm, setBranchForm] = useState<string>("");
+  const [form, setForm] = useState<Vehicle>({
+    status: "pendiente recepcion",
+    purchase_date: new Date().toISOString().split("T")[0],
+  });
 
   const fetchVehicles = () => {
     setLoading(true);
@@ -55,7 +57,7 @@ export default function VehiclesPage() {
         purchase_date: form.purchase_date ?? new Date().toISOString().split("T")[0],
       });
       notifications.show({ title: "Vehículo creado", message: "Se ha dado de alta el vehículo", color: "teal" });
-      setForm({ status: "pendiente recepcion" });
+      setForm({ status: "pendiente recepcion", purchase_date: new Date().toISOString().split("T")[0] });
       fetchVehicles();
     } catch (error) {
       notifications.show({ title: "Error", message: (error as Error).message, color: "red" });
@@ -152,6 +154,7 @@ export default function VehiclesPage() {
             value={form.license_plate ?? ""}
             onChange={(e) => setForm((prev) => ({ ...prev, license_plate: e.target.value }))}
           />
+          <TextInput label="VIN" value={form.vin ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, vin: e.target.value }))} />
           <TextInput label="Marca" value={form.brand ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, brand: e.target.value }))} />
           <TextInput label="Modelo" value={form.model ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))} />
           <NumberInput
@@ -159,15 +162,14 @@ export default function VehiclesPage() {
             value={form.year ?? undefined}
             onChange={(value) => setForm((prev) => ({ ...prev, year: typeof value === "number" ? value : null }))}
             min={1900}
-            max={2100}
-            step={1}
+            max={new Date().getFullYear() + 1}
           />
           <NumberInput
-            label="Kilómetros"
+            label="Kilometraje"
             value={form.km ?? undefined}
             onChange={(value) => setForm((prev) => ({ ...prev, km: typeof value === "number" ? value : null }))}
             min={0}
-            step={500}
+            step={1000}
           />
           <NumberInput
             label="Precio compra"
@@ -175,12 +177,13 @@ export default function VehiclesPage() {
             onChange={(value) => setForm((prev) => ({ ...prev, purchase_price: typeof value === "number" ? value : null }))}
             min={0}
             step={100}
-            suffix=" €"
           />
           <DateInput
-            label="Fecha compra"
+            label="Fecha de compra"
             value={form.purchase_date ? new Date(form.purchase_date) : null}
-            onChange={(value) => setForm((prev) => ({ ...prev, purchase_date: value ? value.toISOString().split("T")[0] : null }))}
+            onChange={(value) =>
+              setForm((prev) => ({ ...prev, purchase_date: value ? value.toISOString().split("T")[0] : undefined }))
+            }
           />
           <Select
             label="Sucursal"

@@ -23,6 +23,7 @@ root.render(
         primaryColor: "teal",
         fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
+      defaultColorScheme="light"
     >
       <Notifications position="top-right" limit={3} />
       <BrowserRouter>
