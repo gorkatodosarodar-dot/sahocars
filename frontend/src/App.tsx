@@ -1,4 +1,5 @@
-import { AppShell, Button, Group, Image, Stack, Text } from "@mantine/core";
+import { AppShell, Burger, Group, Image, NavLink, Stack, Text } from "@mantine/core";
+import { useDisclosure } from "@mantine/hooks";
 import { IconDashboard, IconCar, IconMapPins } from "@tabler/icons-react";
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import DashboardPage from "./pages/DashboardPage";
@@ -14,17 +15,19 @@ const navItems = [
 
 export default function App() {
   const location = useLocation();
+  const [opened, { toggle }] = useDisclosure();
 
   return (
     <AppShell
-      className="app-shell-root"
-      header={{ height: 88 }}
+      header={{ height: 72 }}
+      navbar={{ width: 260, breakpoint: "sm", collapsed: { mobile: !opened } }}
       padding="md"
     >
       <AppShell.Header>
-        <div className="page-container header-container">
-          <Group h="100%" justify="space-between">
-            <Group gap="sm" wrap="nowrap">
+        <Group h="100%" px="md" justify="space-between">
+          <Group>
+            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+            <Group gap="sm">
               <Image src={logo} alt="Sahocars" h={48} w="auto" className="logo" />
               <Stack gap={0}>
                 <Text fw={700} size="lg" c="#2b2b2b">
@@ -35,38 +38,36 @@ export default function App() {
                 </Text>
               </Stack>
             </Group>
-            <Group gap="xs" wrap="wrap">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const active =
-                  location.pathname === item.to || (item.to !== "/" && location.pathname.startsWith(item.to));
-                return (
-                  <Button
-                    key={item.to}
-                    variant={active ? "light" : "subtle"}
-                    color="teal"
-                    leftSection={<Icon size={16} />}
-                    component={Link}
-                    to={item.to}
-                    size="sm"
-                  >
-                    {item.label}
-                  </Button>
-                );
-              })}
-            </Group>
           </Group>
-        </div>
+        </Group>
       </AppShell.Header>
 
+      <AppShell.Navbar p="sm">
+        <Stack gap="xs">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = location.pathname === item.to || (item.to !== "/" && location.pathname.startsWith(item.to));
+            return (
+              <NavLink
+                key={item.to}
+                component={Link}
+                to={item.to}
+                label={item.label}
+                leftSection={<Icon size={18} />}
+                active={active}
+                onClick={() => opened && toggle()}
+              />
+            );
+          })}
+        </Stack>
+      </AppShell.Navbar>
+
       <AppShell.Main className="app-shell-main">
-        <div className="page-container">
-          <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/vehiculos" element={<VehiclesPage />} />
-            <Route path="/sucursales" element={<BranchesPage />} />
-          </Routes>
-        </div>
+        <Routes>
+          <Route path="/" element={<DashboardPage />} />
+          <Route path="/vehiculos" element={<VehiclesPage />} />
+          <Route path="/sucursales" element={<BranchesPage />} />
+        </Routes>
       </AppShell.Main>
     </AppShell>
   );

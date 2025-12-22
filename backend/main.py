@@ -9,18 +9,44 @@ from typing import List, Optional
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlmodel import Field, Session, SQLModel, select
+from sqlmodel import Field, Session, SQLModel, create_engine, select
 
-from db import create_db_and_tables, engine, get_session
-from models.vehicle import Vehicle, VehicleStatus
-from routers.vehicles import router as vehicles_router
-
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
 STORAGE_ROOT = Path(os.getenv("STORAGE_ROOT", "storage")).resolve()
 
 
 class Branch(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
+
+
+class VehicleState(str):
+    PENDING = "pendiente recepcion"
+    REVIEW = "en revision"
+    SHOWROOM = "en exposicion"
+    RESERVED = "reservado"
+    SOLD = "vendido"
+
+
+class Vehicle(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    vin: Optional[str] = Field(default=None, index=True)
+    license_plate: Optional[str] = Field(default=None, index=True)
+    brand: Optional[str] = None
+    model: Optional[str] = None
+    version: Optional[str] = None
+    year: Optional[int] = None
+    km: Optional[int] = None
+    color: Optional[str] = None
+    location_id: Optional[int] = Field(default=None, foreign_key="branch.id")
+    state: Optional[str] = Field(default=VehicleState.PENDING)
+    purchase_price: Optional[float] = None
+    sale_price: Optional[float] = None
+    purchase_date: Optional[date] = None
+    sale_date: Optional[date] = None
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class Expense(SQLModel, table=True):
@@ -73,6 +99,29 @@ class Transfer(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class TransferCreate(SQLModel):
+    from_branch_id: Optional[int] = Field(default=None, foreign_key="branch.id")
+    to_branch_id: int = Field(foreign_key="branch.id")
+    transfer_date: date
+    notes: Optional[str] = None
+
+
+class ExpenseCreate(SQLModel):
+    concept: str
+    amount: float
+    expense_date: date
+    notes: Optional[str] = None
+
+
+class SaleCreate(SQLModel):
+    sale_price: float
+    sale_date: date
+    notes: Optional[str] = None
+    client_name: Optional[str] = None
+    client_tax_id: Optional[str] = None
+
+
+engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if DATABASE_URL.startswith("sqlite") else create_engine(DATABASE_URL)
 app = FastAPI(title="Sahocars API", version="0.1.0")
 
 app.add_middleware(
@@ -84,8 +133,13 @@ app.add_middleware(
 )
 
 
+def get_session():
+    with Session(engine) as session:
+        yield session
+
+
 def init_db():
-    create_db_and_tables()
+    SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
         existing = session.exec(select(Branch)).all()
         if not existing:
@@ -109,38 +163,79 @@ def list_branches(session: Session = Depends(get_session)):
     return session.exec(select(Branch)).all()
 
 
-@app.post("/branches", response_model=Branch, status_code=201)
-def create_branch(branch: Branch, session: Session = Depends(get_session)):
-    name = branch.name.strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="El nombre de la sucursal es obligatorio")
-    new_branch = Branch(name=name)
-    session.add(new_branch)
+@app.post("/vehicles", response_model=Vehicle)
+def create_vehicle(vehicle: Vehicle, session: Session = Depends(get_session)):
+    vehicle.created_at = datetime.utcnow()
+    vehicle.updated_at = datetime.utcnow()
+    session.add(vehicle)
     session.commit()
-    session.refresh(new_branch)
-    return new_branch
+    session.refresh(vehicle)
+    return vehicle
 
 
-app.include_router(vehicles_router)
+@app.get("/vehicles", response_model=List[Vehicle])
+def list_vehicles(
+    state: Optional[str] = None,
+    branch_id: Optional[int] = None,
+    from_date: Optional[date] = Query(None, description="filter by purchase date >="),
+    to_date: Optional[date] = Query(None, description="filter by purchase date <="),
+    session: Session = Depends(get_session),
+):
+    query = select(Vehicle)
+    if state:
+        query = query.where(Vehicle.state == state)
+    if branch_id:
+        query = query.where(Vehicle.location_id == branch_id)
+    if from_date:
+        query = query.where(Vehicle.purchase_date >= from_date)
+    if to_date:
+        query = query.where(Vehicle.purchase_date <= to_date)
+    query = query.order_by(Vehicle.created_at.desc())
+    return session.exec(query).all()
+
+
+@app.get("/vehicles/{vehicle_id}", response_model=Vehicle)
+def get_vehicle(vehicle_id: int, session: Session = Depends(get_session)):
+    vehicle = session.get(Vehicle, vehicle_id)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+    return vehicle
+
+
+@app.patch("/vehicles/{vehicle_id}", response_model=Vehicle)
+def update_vehicle(vehicle_id: int, data: Vehicle, session: Session = Depends(get_session)):
+    vehicle = session.get(Vehicle, vehicle_id)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+    update_data = data.model_dump(exclude_unset=True)
+    update_data.pop("id", None)
+    update_data.pop("created_at", None)
+    for key, value in update_data.items():
+        setattr(vehicle, key, value)
+    vehicle.updated_at = datetime.utcnow()
+    session.add(vehicle)
+    session.commit()
+    session.refresh(vehicle)
+    return vehicle
 
 
 @app.post("/vehicles/{vehicle_id}/transfer", response_model=Transfer)
 def transfer_vehicle(
     vehicle_id: int,
-    transfer: Transfer,
+    transfer: TransferCreate,
     session: Session = Depends(get_session),
 ):
     vehicle = session.get(Vehicle, vehicle_id)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    transfer.vehicle_id = vehicle_id
-    session.add(transfer)
-    vehicle.branch_id = transfer.to_branch_id
+    transfer_record = Transfer(vehicle_id=vehicle_id, **transfer.model_dump())
+    session.add(transfer_record)
+    vehicle.location_id = transfer_record.to_branch_id
     vehicle.updated_at = datetime.utcnow()
     session.add(vehicle)
     session.commit()
-    session.refresh(transfer)
-    return transfer
+    session.refresh(transfer_record)
+    return transfer_record
 
 
 @app.get("/vehicles/{vehicle_id}/expenses", response_model=List[Expense])
@@ -149,31 +244,31 @@ def list_expenses(vehicle_id: int, session: Session = Depends(get_session)):
 
 
 @app.post("/vehicles/{vehicle_id}/expenses", response_model=Expense)
-def add_expense(vehicle_id: int, expense: Expense, session: Session = Depends(get_session)):
+def add_expense(vehicle_id: int, expense: ExpenseCreate, session: Session = Depends(get_session)):
     if not session.get(Vehicle, vehicle_id):
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    expense.vehicle_id = vehicle_id
-    session.add(expense)
+    expense_record = Expense(vehicle_id=vehicle_id, **expense.model_dump())
+    session.add(expense_record)
     session.commit()
-    session.refresh(expense)
-    return expense
+    session.refresh(expense_record)
+    return expense_record
 
 
 @app.post("/vehicles/{vehicle_id}/sale", response_model=Sale)
-def register_sale(vehicle_id: int, sale: Sale, session: Session = Depends(get_session)):
+def register_sale(vehicle_id: int, sale: SaleCreate, session: Session = Depends(get_session)):
     vehicle = session.get(Vehicle, vehicle_id)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    sale.vehicle_id = vehicle_id
-    vehicle.sale_price = sale.sale_price
-    vehicle.sale_date = sale.sale_date
-    vehicle.status = VehicleStatus.SOLD
+    sale_record = Sale(vehicle_id=vehicle_id, **sale.model_dump())
+    vehicle.sale_price = sale_record.sale_price
+    vehicle.sale_date = sale_record.sale_date
+    vehicle.state = VehicleState.SOLD
     vehicle.updated_at = datetime.utcnow()
-    session.add(sale)
+    session.add(sale_record)
     session.add(vehicle)
     session.commit()
-    session.refresh(sale)
-    return sale
+    session.refresh(sale_record)
+    return sale_record
 
 
 @app.get("/vehicles/{vehicle_id}/documents", response_model=List[Document])
@@ -272,7 +367,7 @@ def dashboard(
 ):
     vehicles_query = select(Vehicle)
     if branch_id:
-        vehicles_query = vehicles_query.where(Vehicle.branch_id == branch_id)
+        vehicles_query = vehicles_query.where(Vehicle.location_id == branch_id)
     vehicles = session.exec(vehicles_query).all()
     vehicle_ids = [v.id for v in vehicles if v.id is not None]
 
@@ -316,8 +411,8 @@ def export_vehicles(session: Session = Depends(get_session)):
         "year",
         "km",
         "color",
-        "branch_id",
-        "status",
+        "location_id",
+        "state",
         "purchase_price",
         "purchase_date",
         "sale_price",
@@ -335,8 +430,8 @@ def export_vehicles(session: Session = Depends(get_session)):
             str(v.year or ""),
             str(v.km or ""),
             v.color or "",
-            str(v.branch_id or ""),
-            v.status or "",
+            str(v.location_id or ""),
+            v.state or "",
             str(v.purchase_price or ""),
             v.purchase_date.isoformat() if v.purchase_date else "",
             str(v.sale_price or ""),
@@ -381,3 +476,12 @@ def export_sales(session: Session = Depends(get_session)):
         ]
         lines.append(",".join(values))
     return StreamingResponse(iter(["\n".join(lines)]), media_type="text/csv")
+
+
+@app.get("/")
+def root():
+    return {
+        "message": "Sahocars API operativa",
+        "docs": "/docs",
+        "health": "/health",
+    }

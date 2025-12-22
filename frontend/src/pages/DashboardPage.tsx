@@ -24,7 +24,7 @@ export default function DashboardPage() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="flex-start" wrap="wrap" gap="sm">
+      <Group justify="space-between">
         <div>
           <Title order={2}>Dashboard</Title>
           <Text c="dimmed">Gastos, ingresos y margen por fechas y sucursal</Text>
@@ -32,7 +32,7 @@ export default function DashboardPage() {
       </Group>
 
       <Card withBorder radius="md" shadow="sm">
-        <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} spacing="md">
+        <Group align="flex-end" gap="md">
           <DateInput
             label="Desde"
             placeholder="Fecha inicio"
@@ -40,7 +40,6 @@ export default function DashboardPage() {
             onChange={(value) =>
               setFilters((prev) => ({ ...prev, from: value ? value.toISOString().split("T")[0] : undefined }))
             }
-            w="100%"
           />
           <DateInput
             label="Hasta"
@@ -49,7 +48,6 @@ export default function DashboardPage() {
             onChange={(value) =>
               setFilters((prev) => ({ ...prev, to: value ? value.toISOString().split("T")[0] : undefined }))
             }
-            w="100%"
           />
           <Select
             label="Sucursal"
@@ -58,14 +56,11 @@ export default function DashboardPage() {
             data={branches.map((b) => ({ label: b.name, value: String(b.id) }))}
             value={filters.branchId ? String(filters.branchId) : null}
             onChange={(value) => setFilters((prev) => ({ ...prev, branchId: value ? Number(value) : undefined }))}
-            w="100%"
           />
-          <Group align="flex-end">
-            <Button variant="light" onClick={() => setFilters({})}>
-              Limpiar filtros
-            </Button>
-          </Group>
-        </SimpleGrid>
+          <Button variant="light" onClick={() => setFilters({})}>
+            Limpiar filtros
+          </Button>
+        </Group>
       </Card>
 
       <SimpleGrid cols={{ base: 1, sm: 2, md: 4 }} spacing="md">
@@ -75,7 +70,7 @@ export default function DashboardPage() {
         <StatCard label="Margen" value={formatCurrency(summary?.margin)} color="#111" loading={loading} />
       </SimpleGrid>
 
-      <Group gap="md" wrap="wrap">
+      <Group>
         <ExportButton resource="vehicles" label="Exportar vehículos" />
         <ExportButton resource="expenses" label="Exportar gastos" />
         <ExportButton resource="sales" label="Exportar ventas" />

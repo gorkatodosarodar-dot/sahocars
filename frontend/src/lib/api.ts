@@ -12,8 +12,8 @@ export type Vehicle = {
   year?: number | null;
   km?: number | null;
   color?: string | null;
-  branch_id?: number | null;
-  status?: string | null;
+  location_id?: number | null;
+  state?: string | null;
   purchase_price?: number | null;
   sale_price?: number | null;
   purchase_date?: string | null;
@@ -64,11 +64,6 @@ async function fetchJson<T>(path: string, options: RequestInit = {}): Promise<T>
 
 export const api = {
   getBranches: () => fetchJson<Branch[]>("/branches"),
-  createBranch: (payload: { name: string }) =>
-    fetchJson<Branch>("/branches", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
   getDashboard: (params: { from?: string; to?: string; branchId?: number }) => {
     const search = new URLSearchParams();
     if (params.from) search.append("from_date", params.from);
@@ -77,9 +72,9 @@ export const api = {
     const qs = search.toString();
     return fetchJson<DashboardSummary>(`/dashboard${qs ? `?${qs}` : ""}`);
   },
-  listVehicles: (params: { status?: string; branchId?: number; from?: string; to?: string }) => {
+  listVehicles: (params: { state?: string; branchId?: number; from?: string; to?: string }) => {
     const search = new URLSearchParams();
-    if (params.status) search.append("status", params.status);
+    if (params.state) search.append("state", params.state);
     if (params.branchId) search.append("branch_id", String(params.branchId));
     if (params.from) search.append("from_date", params.from);
     if (params.to) search.append("to_date", params.to);

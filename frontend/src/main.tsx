@@ -18,12 +18,11 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <MantineProvider
-      defaultColorScheme="light"
       theme={{
+        colorScheme: "light",
         primaryColor: "teal",
         fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
       }}
-      defaultColorScheme="light"
     >
       <Notifications position="top-right" limit={3} />
       <BrowserRouter>
