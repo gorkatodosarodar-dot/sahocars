@@ -16,12 +16,15 @@ import {
 import { DateInput } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
 
+const INITIAL_FORM: Vehicle = { state: "pendiente recepcion" };
+
 export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [filters, setFilters] = useState<{ state?: string; branchId?: number; from?: string; to?: string }>({});
-  const [form, setForm] = useState<Vehicle>({ state: "pendiente recepcion" });
+  const [form, setForm] = useState<Vehicle>(INITIAL_FORM);
 
   const fetchVehicles = () => {
     setLoading(true);
@@ -40,14 +43,34 @@ export default function VehiclesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters]);
 
+  const canCreate = form.license_plate?.trim() && form.brand?.trim() && form.model?.trim() && form.location_id;
+
   const handleCreate = async () => {
     try {
-      await api.createVehicle(form);
+      setCreating(true);
+      const newVehicle = await api.createVehicle(form);
       notifications.show({ title: "Vehículo creado", message: "Se ha dado de alta el vehículo", color: "teal" });
-      setForm({ state: "pendiente recepcion" });
-      fetchVehicles();
+      setForm(INITIAL_FORM);
+      
+      // Actualizar la lista con el nuevo vehículo (sin duplicados)
+      setVehicles((prev) => {
+        const exists = prev.some((v) => v.id === newVehicle.id);
+        if (exists) {
+          return prev;
+        }
+        return [newVehicle, ...prev];
+      });
     } catch (error) {
-      notifications.show({ title: "Error", message: (error as Error).message, color: "red" });
+      const errorMessage = error instanceof Error ? error.message : "Error desconocido";
+      console.error("Error al crear vehículo:", errorMessage);
+      notifications.show({ 
+        title: "Error al crear vehículo", 
+        message: errorMessage, 
+        color: "red",
+        autoClose: false 
+      });
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -144,8 +167,7 @@ export default function VehiclesPage() {
             onChange={(value) => setForm((prev) => ({ ...prev, purchase_price: typeof value === "number" ? value : null }))}
             min={0}
             step={100}
-            parser={(value) => value?.replace(/€/g, "") || ""}
-            formatter={(value) => (value ? `${value} €` : "")}
+            prefix="€ "
           />
           <Select
             label="Sucursal"
@@ -162,7 +184,9 @@ export default function VehiclesPage() {
           />
         </SimpleGrid>
         <Group justify="flex-end" mt="md">
-          <Button onClick={handleCreate}>Crear</Button>
+          <Button onClick={handleCreate} disabled={!canCreate} loading={creating}>
+            Crear
+          </Button>
         </Group>
       </Card>
 

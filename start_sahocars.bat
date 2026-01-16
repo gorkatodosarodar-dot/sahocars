@@ -1,60 +1,46 @@
 @echo off
 setlocal
+title SAHOCARS START (diagnostico)
 
-rem Ruta del log
-set "LOG=%~dp0start_sahocars.log"
-echo [%date% %time%] === Iniciando script === > "%LOG%"
+set "REPO=C:\sahocars"
+set "LAUNCHER_PY=%REPO%\launcher\launcher.py"
 
-rem Rutas base (normaliza el path absoluto sin barra final)
-set "ROOT=%~dp0"
-for %%I in ("%ROOT%") do set "ROOT=%%~fI"
-if "%ROOT:~-1%"=="\" set "ROOT=%ROOT:~0,-1%"
-set "BACKEND=%ROOT%\backend"
-set "FRONTEND=%ROOT%\frontend"
+echo =========================================
+echo   SAHOCARS - START (diagnostico)
+echo =========================================
+echo REPO: %REPO%
+echo LAUNCHER: %LAUNCHER_PY%
+echo.
 
-echo ROOT=%ROOT%>> "%LOG%"
-echo BACKEND=%BACKEND%>> "%LOG%"
-echo FRONTEND=%FRONTEND%>> "%LOG%"
-echo ROOT=%ROOT%
-echo BACKEND=%BACKEND%
-echo FRONTEND=%FRONTEND%
-
-echo === Preparando backend ===
-echo [%date% %time%] Preparando backend en %BACKEND% >> "%LOG%"
-pushd "%BACKEND%"
-if not exist ".venv" (
-  echo Creando entorno virtual de Python...
-  echo [%date% %time%] Creando venv >> "%LOG%"
-  python -m venv .venv
+if not exist "%REPO%\" (
+  echo ERROR: No existe %REPO%
+  echo.
+  pause
+  exit /b 1
 )
-call ".venv\Scripts\activate"
-python -m pip install --upgrade pip >nul
-pip install -r requirements.txt
-popd
 
-echo === Arrancando backend (puerto 8000) ===
-echo [%date% %time%] Lanzando backend >> "%LOG%"
-start "sahocars-backend" cmd /K "cd /d \"%BACKEND%\" && call .venv\Scripts\activate && uvicorn main:app --reload --host 0.0.0.0 --port 8000"
-
-echo === Preparando frontend ===
-echo [%date% %time%] Preparando frontend en %FRONTEND% >> "%LOG%"
-pushd "%FRONTEND%"
-if not exist "node_modules" (
-  npm ci
-) else (
-  echo node_modules ya existe, saltando npm ci
+if not exist "%LAUNCHER_PY%" (
+  echo ERROR: No existe el launcher.py en:
+  echo %LAUNCHER_PY%
+  echo.
+  dir /b "%REPO%\launcher"
+  echo.
+  pause
+  exit /b 1
 )
-popd
 
-echo === Arrancando frontend (puerto 5173) ===
-echo [%date% %time%] Lanzando frontend >> "%LOG%"
-start "sahocars-frontend" cmd /K "cd /d \"%FRONTEND%\" && npm run dev -- --host 0.0.0.0 --port 5173"
+cd /d "%REPO%"
+echo OK: cd a %CD%
+echo.
 
-echo === Abriendo navegador ===
-start "" "http://localhost:5173/"
-echo [%date% %time%] Navegador abierto >> "%LOG%"
+echo Comprobando Python...
+where python
+echo.
 
-echo Listo. Se han abierto dos ventanas de terminal con backend y frontend.
-echo [%date% %time%] Script finalizado >> "%LOG%"
+echo Ejecutando launcher...
+python "%LAUNCHER_PY%"
+echo.
 
+echo (Si ves esto, el launcher ha terminado o ha fallado.)
+pause
 endlocal

@@ -38,8 +38,8 @@ class Vehicle(SQLModel, table=True):
     year: Optional[int] = None
     km: Optional[int] = None
     color: Optional[str] = None
-    location_id: Optional[int] = Field(default=None, foreign_key="branch.id")
-    state: Optional[str] = Field(default=VehicleState.PENDING)
+    branch_id: Optional[int] = Field(default=None, foreign_key="branch.id")
+    status: Optional[str] = Field(default=VehicleState.PENDING)
     purchase_price: Optional[float] = None
     sale_price: Optional[float] = None
     purchase_date: Optional[date] = None
@@ -89,6 +89,22 @@ class Photo(SQLModel, table=True):
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class VehicleCreate(SQLModel):
+    vin: str
+    license_plate: str
+    brand: str
+    model: str
+    year: int
+    km: int
+    branch_id: int
+    purchase_price: float
+    purchase_date: str  # Acepta string en formato ISO
+    version: Optional[str] = None
+    color: Optional[str] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
 class Transfer(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     vehicle_id: int = Field(foreign_key="vehicle.id")
@@ -124,11 +140,12 @@ class SaleCreate(SQLModel):
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if DATABASE_URL.startswith("sqlite") else create_engine(DATABASE_URL)
 app = FastAPI(title="Sahocars API", version="0.1.0")
 
+# Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "*"],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -164,13 +181,26 @@ def list_branches(session: Session = Depends(get_session)):
 
 
 @app.post("/vehicles", response_model=Vehicle)
-def create_vehicle(vehicle: Vehicle, session: Session = Depends(get_session)):
-    vehicle.created_at = datetime.utcnow()
-    vehicle.updated_at = datetime.utcnow()
-    session.add(vehicle)
-    session.commit()
-    session.refresh(vehicle)
-    return vehicle
+def create_vehicle(vehicle_data: VehicleCreate, session: Session = Depends(get_session)):
+    try:
+        data = vehicle_data.model_dump()
+        # Convertir string de fecha a date
+        if isinstance(data.get('purchase_date'), str):
+            data['purchase_date'] = datetime.fromisoformat(data['purchase_date']).date()
+        if isinstance(data.get('sale_date'), str):
+            data['sale_date'] = datetime.fromisoformat(data['sale_date']).date()
+        
+        vehicle = Vehicle(**data)
+        vehicle.created_at = datetime.utcnow()
+        vehicle.updated_at = datetime.utcnow()
+        session.add(vehicle)
+        session.commit()
+        session.refresh(vehicle)
+        return vehicle
+    except Exception as e:
+        session.rollback()
+        print(f"Error en create_vehicle: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Error al crear vehículo: {str(e)}")
 
 
 @app.get("/vehicles", response_model=List[Vehicle])
@@ -181,17 +211,21 @@ def list_vehicles(
     to_date: Optional[date] = Query(None, description="filter by purchase date <="),
     session: Session = Depends(get_session),
 ):
-    query = select(Vehicle)
-    if state:
-        query = query.where(Vehicle.state == state)
-    if branch_id:
-        query = query.where(Vehicle.location_id == branch_id)
-    if from_date:
-        query = query.where(Vehicle.purchase_date >= from_date)
-    if to_date:
-        query = query.where(Vehicle.purchase_date <= to_date)
-    query = query.order_by(Vehicle.created_at.desc())
-    return session.exec(query).all()
+    try:
+        query = select(Vehicle)
+        if state:
+            query = query.where(Vehicle.status == state)
+        if branch_id:
+            query = query.where(Vehicle.branch_id == branch_id)
+        if from_date:
+            query = query.where(Vehicle.purchase_date >= from_date)
+        if to_date:
+            query = query.where(Vehicle.purchase_date <= to_date)
+        query = query.order_by(Vehicle.created_at.desc())
+        return session.exec(query).all()
+    except Exception as e:
+        print(f"Error en list_vehicles: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error al listar vehículos: {str(e)}")
 
 
 @app.get("/vehicles/{vehicle_id}", response_model=Vehicle)
@@ -230,7 +264,7 @@ def transfer_vehicle(
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
     transfer_record = Transfer(vehicle_id=vehicle_id, **transfer.model_dump())
     session.add(transfer_record)
-    vehicle.location_id = transfer_record.to_branch_id
+    vehicle.branch_id = transfer_record.to_branch_id
     vehicle.updated_at = datetime.utcnow()
     session.add(vehicle)
     session.commit()
@@ -365,37 +399,41 @@ def dashboard(
     branch_id: Optional[int] = Query(None),
     session: Session = Depends(get_session),
 ):
-    vehicles_query = select(Vehicle)
-    if branch_id:
-        vehicles_query = vehicles_query.where(Vehicle.location_id == branch_id)
-    vehicles = session.exec(vehicles_query).all()
-    vehicle_ids = [v.id for v in vehicles if v.id is not None]
+    try:
+        vehicles_query = select(Vehicle)
+        if branch_id:
+            vehicles_query = vehicles_query.where(Vehicle.branch_id == branch_id)
+        vehicles = session.exec(vehicles_query).all()
+        vehicle_ids = [v.id for v in vehicles if v.id is not None]
 
-    income = 0.0
-    if vehicle_ids:
-        sale_query = select(Sale).where(Sale.vehicle_id.in_(vehicle_ids))
-        if from_date:
-            sale_query = sale_query.where(Sale.sale_date >= from_date)
-        if to_date:
-            sale_query = sale_query.where(Sale.sale_date <= to_date)
-        income = sum(s.sale_price for s in session.exec(sale_query).all())
+        income = 0.0
+        if vehicle_ids:
+            sale_query = select(Sale).where(Sale.vehicle_id.in_(vehicle_ids))
+            if from_date:
+                sale_query = sale_query.where(Sale.sale_date >= from_date)
+            if to_date:
+                sale_query = sale_query.where(Sale.sale_date <= to_date)
+            income = sum(s.sale_price for s in session.exec(sale_query).all())
 
-    expense_total = 0.0
-    if vehicle_ids:
-        expense_query = select(Expense).where(Expense.vehicle_id.in_(vehicle_ids))
-        if from_date:
-            expense_query = expense_query.where(Expense.expense_date >= from_date)
-        if to_date:
-            expense_query = expense_query.where(Expense.expense_date <= to_date)
-        expense_total = sum(exp.amount for exp in session.exec(expense_query).all())
+        expense_total = 0.0
+        if vehicle_ids:
+            expense_query = select(Expense).where(Expense.vehicle_id.in_(vehicle_ids))
+            if from_date:
+                expense_query = expense_query.where(Expense.expense_date >= from_date)
+            if to_date:
+                expense_query = expense_query.where(Expense.expense_date <= to_date)
+            expense_total = sum(exp.amount for exp in session.exec(expense_query).all())
 
-    margin = income - expense_total
-    return {
-        "vehicles": len(vehicles),
-        "income": income,
-        "expenses": expense_total,
-        "margin": margin,
-    }
+        margin = income - expense_total
+        return {
+            "vehicles": len(vehicles),
+            "income": income,
+            "expenses": expense_total,
+            "margin": margin,
+        }
+    except Exception as e:
+        print(f"Error en dashboard: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error en dashboard: {str(e)}")
 
 
 @app.get("/export/vehicles")
@@ -411,8 +449,8 @@ def export_vehicles(session: Session = Depends(get_session)):
         "year",
         "km",
         "color",
-        "location_id",
-        "state",
+        "branch_id",
+        "status",
         "purchase_price",
         "purchase_date",
         "sale_price",
@@ -430,8 +468,8 @@ def export_vehicles(session: Session = Depends(get_session)):
             str(v.year or ""),
             str(v.km or ""),
             v.color or "",
-            str(v.location_id or ""),
-            v.state or "",
+            str(v.branch_id or ""),
+            v.status or "",
             str(v.purchase_price or ""),
             v.purchase_date.isoformat() if v.purchase_date else "",
             str(v.sale_price or ""),

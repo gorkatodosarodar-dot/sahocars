@@ -48,18 +48,31 @@ export type DashboardSummary = {
 };
 
 async function fetchJson<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      ...(options.headers || {}),
-    },
-  });
-  if (!response.ok) {
+  try {
+    const response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    });
+    
     const detail = await response.text();
-    throw new Error(detail || "Error en la petición");
+    
+    if (!response.ok) {
+      console.error(`API Error [${response.status}]:`, detail);
+      throw new Error(detail || `Error ${response.status}: ${response.statusText}`);
+    }
+    
+    return JSON.parse(detail) as Promise<T>;
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error("Fetch error:", error.message);
+      throw error;
+    }
+    console.error("Unknown error:", error);
+    throw new Error("Error desconocido en la petición");
   }
-  return response.json() as Promise<T>;
 }
 
 export const api = {
@@ -79,13 +92,46 @@ export const api = {
     if (params.from) search.append("from_date", params.from);
     if (params.to) search.append("to_date", params.to);
     const qs = search.toString();
-    return fetchJson<Vehicle[]>(`/vehicles${qs ? `?${qs}` : ""}`);
+    return fetchJson<any[]>(`/vehicles${qs ? `?${qs}` : ""}`).then((res) =>
+      res.map((v) => ({
+        ...v,
+        location_id: v.branch_id,
+        state: v.status,
+      }))
+    );
   },
-  createVehicle: (payload: Vehicle) =>
-    fetchJson<Vehicle>("/vehicles", {
+  createVehicle: (payload: Vehicle) => {
+    // Mapear nombres de campos frontend a backend
+    const today = new Date().toISOString().split("T")[0];
+    const mapped = {
+      vin: payload.vin?.trim() || `VIN-${Date.now()}`,
+      license_plate: payload.license_plate?.trim() || "",
+      brand: payload.brand?.trim() || "",
+      model: payload.model?.trim() || "",
+      year: payload.year || new Date().getFullYear(),
+      km: payload.km || 0,
+      version: payload.version?.trim() || null,
+      color: payload.color?.trim() || null,
+      branch_id: payload.location_id,
+      status: payload.state || "pendiente recepcion",
+      purchase_price: payload.purchase_price || 0,
+      purchase_date: payload.purchase_date || today,
+      sale_price: payload.sale_price || null,
+      sale_date: payload.sale_date || null,
+      notes: payload.notes?.trim() || null,
+    };
+    
+    console.log("Sending to backend:", mapped);
+    
+    return fetchJson<any>("/vehicles", {
       method: "POST",
-      body: JSON.stringify(payload),
-    }),
+      body: JSON.stringify(mapped),
+    }).then((res) => ({
+      ...res,
+      location_id: res.branch_id,
+      state: res.status,
+    }));
+  },
   exportCsv: (resource: "vehicles" | "expenses" | "sales") =>
     fetch(`${API_URL}/export/${resource}`),
 };
