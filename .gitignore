@@ -18,3 +18,24 @@ storage/
 .vscode/
 .idea/
 .DS_Store
+
+# --- SAHOCARS (local-only / safety) ---
+
+# Python venv (local)
+backend/.venv/
+.venv/
+venv/
+
+# Logs
+*.log
+
+# Accidentally duplicated repos inside repo
+sahocars/
+sahocars-1/
+
+# Build / cache
+frontend/.vite/
+frontend/dist/
+
+# Archivos por lotes
+*.bat
