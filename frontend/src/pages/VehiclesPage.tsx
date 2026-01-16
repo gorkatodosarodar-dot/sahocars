@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api, Branch, formatCurrency, formatDate, vehicleStates, Vehicle } from "../lib/api";
 import {
   Button,
@@ -19,6 +20,7 @@ import { notifications } from "@mantine/notifications";
 const INITIAL_FORM: Vehicle = { state: "pendiente recepcion" };
 
 export default function VehiclesPage() {
+  const navigate = useNavigate();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(false);
@@ -77,7 +79,12 @@ export default function VehiclesPage() {
   const rows = useMemo(
     () =>
       vehicles.map((vehicle) => (
-        <Table.Tr key={vehicle.id}>
+        <Table.Tr
+          key={vehicle.id}
+          style={{ cursor: "pointer" }}
+          onClick={() => vehicle.id && navigate(`/vehiculos/${vehicle.id}`)}
+          className="vehicles-table-row"
+        >
           <Table.Td>{vehicle.license_plate || "-"}</Table.Td>
           <Table.Td>{vehicle.brand || "-"}</Table.Td>
           <Table.Td>{vehicle.model || "-"}</Table.Td>
@@ -88,7 +95,7 @@ export default function VehiclesPage() {
           <Table.Td>{formatDate(vehicle.sale_date)}</Table.Td>
         </Table.Tr>
       )),
-    [vehicles, branches]
+    [vehicles, branches, navigate]
   );
 
   return (

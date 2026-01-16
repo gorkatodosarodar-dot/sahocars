@@ -16,3 +16,11 @@ body {
 .app-shell-main {
   padding: 1.5rem;
 }
+
+.vehicles-table-row {
+  transition: background-color 0.15s ease;
+}
+
+.vehicles-table-row:hover {
+  background-color: #f0f4f8;
+}

@@ -3,6 +3,7 @@ import { IconDashboard, IconCar, IconMapPins } from "@tabler/icons-react";
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import DashboardPage from "./pages/DashboardPage";
 import VehiclesPage from "./pages/VehiclesPage";
+import VehicleDetailPage from "./pages/VehicleDetailPage";
 import BranchesPage from "./pages/BranchesPage";
 import logo from "./assets/sahocars-logo.svg";
 
@@ -64,6 +65,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/vehiculos" element={<VehiclesPage />} />
+            <Route path="/vehiculos/:id" element={<VehicleDetailPage />} />
             <Route path="/sucursales" element={<BranchesPage />} />
           </Routes>
         </div>

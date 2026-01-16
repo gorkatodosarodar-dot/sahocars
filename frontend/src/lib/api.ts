@@ -19,6 +19,8 @@ export type Vehicle = {
   purchase_date?: string | null;
   sale_date?: string | null;
   notes?: string | null;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export type Expense = {
@@ -100,6 +102,12 @@ export const api = {
       }))
     );
   },
+  getVehicle: (id: number) =>
+    fetchJson<any>(`/vehicles/${id}`).then((res) => ({
+      ...res,
+      location_id: res.branch_id,
+      state: res.status,
+    })),
   createVehicle: (payload: Vehicle) => {
     // Mapear nombres de campos frontend a backend
     const today = new Date().toISOString().split("T")[0];
