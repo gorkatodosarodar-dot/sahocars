@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useNavigate } from "react-router-dom";
 import { api, Branch, formatCurrency, formatDate, vehicleStates, Vehicle } from "../lib/api";
 import {
   Button,
@@ -21,7 +20,6 @@ import { notifications } from "@mantine/notifications";
 const INITIAL_FORM: Vehicle = { state: "pendiente recepcion" };
 
 export default function VehiclesPage() {
-  const navigate = useNavigate();
   const navigate = useNavigate();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -81,12 +79,6 @@ export default function VehiclesPage() {
   const rows = useMemo(
     () =>
       vehicles.map((vehicle) => (
-        <Table.Tr
-          key={vehicle.id}
-          onClick={() => navigate(`/vehiculos/${vehicle.id}`)}
-          style={{ cursor: "pointer" }}
-          className="vehicles-table-row"
-        >
         <Table.Tr
           key={vehicle.id}
           style={{ cursor: "pointer" }}
