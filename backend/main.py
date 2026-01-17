@@ -12,6 +12,7 @@ from typing import List, Optional
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy import Column, JSON
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from services.vehicle_expenses_service import (
     create_expense as create_vehicle_expense_service,
@@ -19,6 +20,7 @@ from services.vehicle_expenses_service import (
     list_expenses as list_vehicle_expenses_service,
     update_expense as update_vehicle_expense_service,
 )
+from services.vehicle_events_service import emit_event, list_timeline
 from services.vehicle_finance_service import get_vehicle_kpis
 from services.vehicle_status_service import change_status
 from services.vehicle_visits_service import create_visit, delete_visit, list_visits
@@ -164,6 +166,29 @@ class VehicleVisit(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class VehicleEventType(str, Enum):
+    STATUS_CHANGE = "STATUS_CHANGE"
+    EXPENSE_CREATED = "EXPENSE_CREATED"
+    EXPENSE_UPDATED = "EXPENSE_UPDATED"
+    EXPENSE_DELETED = "EXPENSE_DELETED"
+    VISIT_CREATED = "VISIT_CREATED"
+    VISIT_DELETED = "VISIT_DELETED"
+    FILE_UPLOADED = "FILE_UPLOADED"
+    FILE_DELETED = "FILE_DELETED"
+    NOTE_CREATED = "NOTE_CREATED"
+    NOTE_DELETED = "NOTE_DELETED"
+    VEHICLE_UPDATED = "VEHICLE_UPDATED"
+
+
+class VehicleEvent(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    vehicle_id: int = Field(foreign_key="vehicle.id")
+    type: VehicleEventType
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    actor: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class VehicleLinkCreate(SQLModel):
     title: Optional[str] = None
     url: str
@@ -204,6 +229,14 @@ class VehicleKpisOut(SQLModel):
 class VehicleStatusChange(SQLModel):
     status: VehicleStatus
     note: Optional[str] = None
+
+
+class VehicleTimelineItem(SQLModel):
+    id: int
+    type: VehicleEventType
+    created_at: datetime
+    summary: str
+    payload: dict
 
 
 class VehicleCreate(SQLModel):
@@ -420,6 +453,16 @@ def update_vehicle_status(
     session: Session = Depends(get_session),
 ):
     return change_status(session, vehicle_id, payload.status, note=payload.note)
+
+
+@app.get("/vehicles/{vehicle_id}/timeline", response_model=List[VehicleTimelineItem])
+def get_vehicle_timeline(
+    vehicle_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    types: Optional[List[VehicleEventType]] = Query(None),
+    session: Session = Depends(get_session),
+):
+    return list_timeline(session, vehicle_id, limit=limit, types=types)
 
 
 @app.post("/vehicles/{vehicle_id}/transfer", response_model=Transfer)
@@ -642,6 +685,12 @@ def upload_vehicle_file(
     session.add(record)
     session.commit()
     session.refresh(record)
+    emit_event(
+        session,
+        vehicle_id,
+        VehicleEventType.FILE_UPLOADED,
+        {"id": record.id, "name": record.original_name, "category": record.category},
+    )
     return record
 
 
@@ -674,6 +723,12 @@ def delete_vehicle_file(
         file_path.unlink()
     session.delete(record)
     session.commit()
+    emit_event(
+        session,
+        vehicle_id,
+        VehicleEventType.FILE_DELETED,
+        {"id": record.id, "name": record.original_name, "category": record.category},
+    )
     return {"status": "ok"}
 
 

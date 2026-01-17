@@ -20,7 +20,8 @@ def list_expenses(session: Session, vehicle_id: int):
 
 
 def create_expense(session: Session, vehicle_id: int, payload):
-    from main import Vehicle, VehicleExpense, VehicleFile
+    from main import Vehicle, VehicleEventType, VehicleExpense, VehicleFile
+    from services.vehicle_events_service import emit_event
 
     if not session.get(Vehicle, vehicle_id):
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
@@ -46,11 +47,23 @@ def create_expense(session: Session, vehicle_id: int, payload):
     session.add(expense)
     session.commit()
     session.refresh(expense)
+    emit_event(
+        session,
+        vehicle_id,
+        VehicleEventType.EXPENSE_CREATED,
+        {
+            "id": expense.id,
+            "amount": float(expense.amount),
+            "currency": expense.currency,
+            "category": expense.category,
+        },
+    )
     return expense
 
 
 def update_expense(session: Session, vehicle_id: int, expense_id: int, payload):
-    from main import VehicleExpense, VehicleFile
+    from main import VehicleEventType, VehicleExpense, VehicleFile
+    from services.vehicle_events_service import emit_event
 
     expense = session.get(VehicleExpense, expense_id)
     if not expense or expense.vehicle_id != vehicle_id:
@@ -70,14 +83,33 @@ def update_expense(session: Session, vehicle_id: int, expense_id: int, payload):
     session.add(expense)
     session.commit()
     session.refresh(expense)
+    emit_event(
+        session,
+        vehicle_id,
+        VehicleEventType.EXPENSE_UPDATED,
+        {
+            "id": expense.id,
+            "amount": float(expense.amount),
+            "currency": expense.currency,
+            "category": expense.category,
+        },
+    )
     return expense
 
 
 def delete_expense(session: Session, vehicle_id: int, expense_id: int):
-    from main import VehicleExpense
+    from main import VehicleEventType, VehicleExpense
+    from services.vehicle_events_service import emit_event
 
     expense = session.get(VehicleExpense, expense_id)
     if not expense or expense.vehicle_id != vehicle_id:
         raise HTTPException(status_code=404, detail="Gasto no encontrado")
+    payload = {
+        "id": expense.id,
+        "amount": float(expense.amount),
+        "currency": expense.currency,
+        "category": expense.category,
+    }
     session.delete(expense)
     session.commit()
+    emit_event(session, vehicle_id, VehicleEventType.EXPENSE_DELETED, payload)

@@ -18,7 +18,8 @@ def list_visits(session: Session, vehicle_id: int):
 
 
 def create_visit(session: Session, vehicle_id: int, payload):
-    from main import Vehicle, VehicleVisit
+    from main import Vehicle, VehicleEventType, VehicleVisit
+    from services.vehicle_events_service import emit_event
 
     if not session.get(Vehicle, vehicle_id):
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
@@ -42,14 +43,33 @@ def create_visit(session: Session, vehicle_id: int, payload):
     session.add(visit)
     session.commit()
     session.refresh(visit)
+    emit_event(
+        session,
+        vehicle_id,
+        VehicleEventType.VISIT_CREATED,
+        {
+            "id": visit.id,
+            "name": visit.name,
+            "phone": visit.phone,
+            "email": visit.email,
+        },
+    )
     return visit
 
 
 def delete_visit(session: Session, vehicle_id: int, visit_id: int):
-    from main import VehicleVisit
+    from main import VehicleEventType, VehicleVisit
+    from services.vehicle_events_service import emit_event
 
     visit = session.get(VehicleVisit, visit_id)
     if not visit or visit.vehicle_id != vehicle_id:
         raise HTTPException(status_code=404, detail="Visita no encontrada")
+    payload = {
+        "id": visit.id,
+        "name": visit.name,
+        "phone": visit.phone,
+        "email": visit.email,
+    }
     session.delete(visit)
     session.commit()
+    emit_event(session, vehicle_id, VehicleEventType.VISIT_DELETED, payload)
