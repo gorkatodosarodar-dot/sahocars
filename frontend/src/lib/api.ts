@@ -65,6 +65,20 @@ export type VehicleVisitCreateInput = {
   notes?: string | null;
 };
 
+export type VehicleStatus =
+  | "pendiente recepcion"
+  | "en revision"
+  | "en exposicion"
+  | "reservado"
+  | "vendido"
+  | "descartado"
+  | "devuelto";
+
+export type ChangeStatusInput = {
+  status: VehicleStatus;
+  note?: string | null;
+};
+
 export type VehicleKpis = {
   vehicle_id: number;
   total_expenses: number;
@@ -308,6 +322,11 @@ export const api = {
   },
   getVehicleKpis: (vehicleId: number) =>
     fetchJson<VehicleKpis>(`/vehicles/${vehicleId}/kpis`),
+  changeVehicleStatus: (vehicleId: number, payload: ChangeStatusInput) =>
+    fetchJson<Vehicle>(`/vehicles/${vehicleId}/status`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then(mapVehicle),
   listVehicleFiles: (vehicleId: number, category?: VehicleFileCategory) => {
     const qs = category ? `?category=${encodeURIComponent(category)}` : "";
     return fetchJson<VehicleFile[]>(`/vehicles/${vehicleId}/files${qs}`);
@@ -367,4 +386,6 @@ export const vehicleStates = [
   "en exposicion",
   "reservado",
   "vendido",
+  "descartado",
+  "devuelto",
 ];

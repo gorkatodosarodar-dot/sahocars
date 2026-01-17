@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Card, Stack, Text, Title, Button, Grid, Loader, Center, TextInput, Table, Group, ActionIcon, Modal, Select, NumberInput } from "@mantine/core";
+import { Badge, Card, Stack, Text, Title, Button, Grid, Loader, Center, TextInput, Table, Group, ActionIcon, Modal, Select, NumberInput } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { IconArrowLeft, IconExternalLink, IconTrash, IconPlus, IconPencil, IconDownload } from "@tabler/icons-react";
 import {
@@ -14,6 +14,8 @@ import {
   VehicleExpenseCategory,
   ExpenseCreateInput,
   ExpenseUpdateInput,
+  VehicleStatus,
+  ChangeStatusInput,
   VehicleVisit,
   VehicleVisitCreateInput,
   VehicleKpis,
@@ -61,6 +63,10 @@ export default function VehicleDetailPage() {
   const [savingExpense, setSavingExpense] = useState(false);
   const [expenseToDelete, setExpenseToDelete] = useState<VehicleExpense | null>(null);
   const [confirmExpenseDeleteOpen, setConfirmExpenseDeleteOpen] = useState(false);
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [statusValue, setStatusValue] = useState<VehicleStatus | null>(null);
+  const [statusNote, setStatusNote] = useState("");
+  const [savingStatus, setSavingStatus] = useState(false);
   const [visitModalOpen, setVisitModalOpen] = useState(false);
   const [visitDate, setVisitDate] = useState<Date | null>(null);
   const [visitName, setVisitName] = useState("");
@@ -78,6 +84,26 @@ export default function VehicleDetailPage() {
     ADMIN: "Administrativo",
     CLEANING: "Limpieza",
     OTHER: "Otros",
+  };
+
+  const statusLabels: Record<VehicleStatus, string> = {
+    "pendiente recepcion": "En stock",
+    "en revision": "En preparacion",
+    "en exposicion": "En exposicion",
+    reservado: "Reservado",
+    vendido: "Vendido",
+    descartado: "Descartado",
+    devuelto: "Devuelto",
+  };
+
+  const statusColors: Record<VehicleStatus, string> = {
+    "pendiente recepcion": "gray",
+    "en revision": "yellow",
+    "en exposicion": "blue",
+    reservado: "orange",
+    vendido: "green",
+    descartado: "red",
+    devuelto: "violet",
   };
 
   const formatFileSize = (bytes: number) => {
@@ -198,6 +224,7 @@ export default function VehicleDetailPage() {
         setExpenses(expensesData);
         setVisits(visitsData);
         setKpis(kpisData);
+        setStatusValue(vehicleData.state as VehicleStatus | null);
         await Promise.all([refreshFiles(vehicleId), refreshPhotos(vehicleId)]);
       } catch (error) {
         notifications.show({
@@ -497,6 +524,42 @@ export default function VehicleDetailPage() {
     }
   };
 
+  const handleOpenStatusModal = () => {
+    setStatusValue(vehicle?.state as VehicleStatus | null);
+    setStatusNote("");
+    setStatusModalOpen(true);
+  };
+
+  const handleSaveStatus = async () => {
+    if (!id || !statusValue) {
+      notifications.show({
+        title: "Error",
+        message: "Selecciona un estado",
+        color: "red",
+      });
+      return;
+    }
+    const payload: ChangeStatusInput = {
+      status: statusValue,
+      note: statusNote.trim() || undefined,
+    };
+    try {
+      setSavingStatus(true);
+      const updated = await api.changeVehicleStatus(Number(id), payload);
+      setVehicle(updated);
+      setStatusValue(updated.state as VehicleStatus | null);
+      setStatusModalOpen(false);
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al cambiar estado",
+        color: "red",
+      });
+    } finally {
+      setSavingStatus(false);
+    }
+  };
+
   const handleOpenVisitModal = () => {
     resetVisitForm();
     setVisitModalOpen(true);
@@ -586,7 +649,19 @@ export default function VehicleDetailPage() {
 
   return (
     <Stack gap="lg">
-      <Title order={2}>Detalle del vehiculo</Title>
+      <Group justify="space-between" align="center">
+        <Group gap="sm">
+          <Title order={2}>Detalle del vehiculo</Title>
+          {vehicle?.state && (
+            <Badge color={statusColors[vehicle.state as VehicleStatus] || "gray"} variant="light">
+              {statusLabels[vehicle.state as VehicleStatus] || vehicle.state}
+            </Badge>
+          )}
+        </Group>
+        <Button variant="light" onClick={handleOpenStatusModal}>
+          Cambiar estado
+        </Button>
+      </Group>
 
       <Button
         leftSection={<IconArrowLeft size={20} />}
@@ -1175,6 +1250,38 @@ export default function VehicleDetailPage() {
         )}
       </Card>
 
+
+      <Modal
+        opened={statusModalOpen}
+        onClose={() => setStatusModalOpen(false)}
+        title="Cambiar estado"
+        centered
+      >
+        <Stack gap="sm">
+          <Select
+            label="Estado"
+            data={Object.entries(statusLabels).map(([value, label]) => ({
+              value,
+              label,
+            }))}
+            value={statusValue}
+            onChange={(value) => setStatusValue(value ? (value as VehicleStatus) : null)}
+          />
+          <TextInput
+            label="Nota"
+            value={statusNote}
+            onChange={(e) => setStatusNote(e.currentTarget.value)}
+          />
+          <Group justify="flex-end" mt="sm">
+            <Button variant="light" onClick={() => setStatusModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveStatus} loading={savingStatus}>
+              Guardar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       <Modal
         opened={visitModalOpen}
