@@ -12,6 +12,7 @@ import {
   VehicleFileCategory,
   VehicleVisit,
   VehicleVisitCreateInput,
+  VehicleKpis,
   formatCurrency,
   formatDate,
 } from "../lib/api";
@@ -26,6 +27,7 @@ export default function VehicleDetailPage() {
   const [files, setFiles] = useState<VehicleFile[]>([]);
   const [photos, setPhotos] = useState<VehicleFile[]>([]);
   const [visits, setVisits] = useState<VehicleVisit[]>([]);
+  const [kpis, setKpis] = useState<VehicleKpis | null>(null);
   const [loading, setLoading] = useState(true);
   const [newLinkTitle, setNewLinkTitle] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
@@ -115,16 +117,18 @@ export default function VehicleDetailPage() {
       try {
         setLoading(true);
         const vehicleId = Number(id);
-        const [vehicleData, branchesData, linksData, visitsData] = await Promise.all([
+        const [vehicleData, branchesData, linksData, visitsData, kpisData] = await Promise.all([
           api.getVehicle(vehicleId),
           api.getBranches(),
           api.listVehicleLinks(vehicleId),
           api.listVehicleVisits(vehicleId),
+          api.getVehicleKpis(vehicleId),
         ]);
         setVehicle(vehicleData);
         setBranches(branchesData);
         setLinks(linksData);
         setVisits(visitsData);
+        setKpis(kpisData);
         await Promise.all([refreshFiles(vehicleId), refreshPhotos(vehicleId)]);
       } catch (error) {
         notifications.show({
@@ -412,6 +416,11 @@ export default function VehicleDetailPage() {
     }
   };
 
+  const formatPercent = (value?: number | null) => {
+    if (value === null || value === undefined) return "—";
+    return `${(value * 100).toFixed(1)}%`;
+  };
+
   return (
     <Stack gap="lg">
       <Title order={2}>Detalle del vehículo</Title>
@@ -582,6 +591,58 @@ export default function VehicleDetailPage() {
           </Card>
         </Grid.Col>
       </Grid>
+
+      <Card withBorder shadow="xs" radius="md">
+        <Title order={3} mb="md">
+          Indicadores
+        </Title>
+        <Stack gap="xs">
+          <Group justify="space-between">
+            <Text size="sm" c="dimmed">
+              Gastos totales
+            </Text>
+            <Text fw={500}>
+              {kpis ? formatCurrency(kpis.total_expenses) : "—"}
+            </Text>
+          </Group>
+          <Group justify="space-between">
+            <Text size="sm" c="dimmed">
+              Coste total
+            </Text>
+            <Text fw={500}>
+              {kpis?.total_cost !== undefined && kpis?.total_cost !== null
+                ? formatCurrency(kpis.total_cost)
+                : "—"}
+            </Text>
+          </Group>
+          <Group justify="space-between">
+            <Text size="sm" c="dimmed">
+              Margen
+            </Text>
+            <Text fw={500}>
+              {kpis?.gross_margin !== undefined && kpis?.gross_margin !== null
+                ? formatCurrency(kpis.gross_margin)
+                : "—"}
+            </Text>
+          </Group>
+          <Group justify="space-between">
+            <Text size="sm" c="dimmed">
+              ROI
+            </Text>
+            <Text fw={500}>{formatPercent(kpis?.roi)}</Text>
+          </Group>
+          <Group justify="space-between">
+            <Text size="sm" c="dimmed">
+              Dias en stock
+            </Text>
+            <Text fw={500}>
+              {kpis?.days_in_stock !== undefined && kpis?.days_in_stock !== null
+                ? kpis.days_in_stock
+                : "—"}
+            </Text>
+          </Group>
+        </Stack>
+      </Card>
 
       {/* Enlaces Section */}
       <Card withBorder shadow="xs" radius="md">

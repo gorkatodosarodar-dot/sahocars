@@ -66,6 +66,16 @@ export type VehicleVisitCreateInput = {
   notes?: string | null;
 };
 
+export type VehicleKpis = {
+  vehicle_id: number;
+  total_expenses: number;
+  total_cost?: number | null;
+  sale_price?: number | null;
+  gross_margin?: number | null;
+  roi?: number | null;
+  days_in_stock?: number | null;
+};
+
 export type Expense = {
   id?: number;
   vehicle_id: number;
@@ -245,6 +255,8 @@ export const api = {
       throw buildError(response.status, response.statusText, detail);
     }
   },
+  getVehicleKpis: (vehicleId: number) =>
+    fetchJson<VehicleKpis>(`/vehicles/${vehicleId}/kpis`),
   listVehicleFiles: (vehicleId: number, category?: VehicleFileCategory) => {
     const qs = category ? `?category=${encodeURIComponent(category)}` : "";
     return fetchJson<VehicleFile[]>(`/vehicles/${vehicleId}/files${qs}`);
