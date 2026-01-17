@@ -1,8 +1,22 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { Card, Stack, Text, Title, Button, Grid, Loader, Center, TextInput, Table, Group, ActionIcon, Modal, Select } from "@mantine/core";
-import { IconArrowLeft, IconExternalLink, IconTrash, IconPlus } from "@tabler/icons-react";
-import { api, Vehicle, Branch, VehicleLink, VehicleFile, VehicleFileCategory, formatCurrency, formatDate } from "../lib/api";
+import { Card, Stack, Text, Title, Button, Grid, Loader, Center, TextInput, Table, Group, ActionIcon, Modal, Select, NumberInput } from "@mantine/core";
+import { DateInput } from "@mantine/dates";
+import { IconArrowLeft, IconExternalLink, IconTrash, IconPlus, IconPencil } from "@tabler/icons-react";
+import {
+  api,
+  Vehicle,
+  Branch,
+  VehicleLink,
+  VehicleFile,
+  VehicleFileCategory,
+  VehicleExpense,
+  VehicleExpenseCategory,
+  ExpenseCreateInput,
+  ExpenseUpdateInput,
+  formatCurrency,
+  formatDate,
+} from "../lib/api";
 import { notifications } from "@mantine/notifications";
 
 export default function VehicleDetailPage() {
@@ -11,6 +25,7 @@ export default function VehicleDetailPage() {
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [links, setLinks] = useState<VehicleLink[]>([]);
+  const [expenses, setExpenses] = useState<VehicleExpense[]>([]);
   const [files, setFiles] = useState<VehicleFile[]>([]);
   const [photos, setPhotos] = useState<VehicleFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,6 +42,29 @@ export default function VehicleDetailPage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<VehicleFile | null>(null);
   const [confirmFileDeleteOpen, setConfirmFileDeleteOpen] = useState(false);
+  const [expenseModalOpen, setExpenseModalOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<VehicleExpense | null>(null);
+  const [expenseAmount, setExpenseAmount] = useState<number | null>(null);
+  const [expenseCurrency, setExpenseCurrency] = useState("EUR");
+  const [expenseDate, setExpenseDate] = useState<Date | null>(null);
+  const [expenseCategory, setExpenseCategory] = useState<VehicleExpenseCategory | null>(null);
+  const [expenseVendor, setExpenseVendor] = useState("");
+  const [expenseInvoiceRef, setExpenseInvoiceRef] = useState("");
+  const [expensePaymentMethod, setExpensePaymentMethod] = useState("");
+  const [expenseNotes, setExpenseNotes] = useState("");
+  const [expenseFileId, setExpenseFileId] = useState<number | null>(null);
+  const [savingExpense, setSavingExpense] = useState(false);
+  const [expenseToDelete, setExpenseToDelete] = useState<VehicleExpense | null>(null);
+  const [confirmExpenseDeleteOpen, setConfirmExpenseDeleteOpen] = useState(false);
+
+  const expenseCategoryLabels: Record<VehicleExpenseCategory, string> = {
+    MECHANICAL: "Mecanica",
+    TIRES: "Neumaticos",
+    TRANSPORT: "Transporte",
+    ADMIN: "Administrativo",
+    CLEANING: "Limpieza",
+    OTHER: "Otros",
+  };
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -67,19 +105,60 @@ export default function VehicleDetailPage() {
     }
   };
 
+  const refreshExpenses = async (vehicleId: number) => {
+    try {
+      const data = await api.listVehicleExpenses(vehicleId);
+      setExpenses(data);
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al cargar gastos",
+        color: "red",
+      });
+    }
+  };
+
+  const resetExpenseForm = (expense?: VehicleExpense) => {
+    if (expense) {
+      setEditingExpense(expense);
+      setExpenseAmount(expense.amount);
+      setExpenseCurrency(expense.currency || "EUR");
+      setExpenseDate(expense.date ? new Date(expense.date) : null);
+      setExpenseCategory(expense.category);
+      setExpenseVendor(expense.vendor || "");
+      setExpenseInvoiceRef(expense.invoice_ref || "");
+      setExpensePaymentMethod(expense.payment_method || "");
+      setExpenseNotes(expense.notes || "");
+      setExpenseFileId(expense.linked_vehicle_file_id || null);
+      return;
+    }
+    setEditingExpense(null);
+    setExpenseAmount(null);
+    setExpenseCurrency("EUR");
+    setExpenseDate(null);
+    setExpenseCategory(null);
+    setExpenseVendor("");
+    setExpenseInvoiceRef("");
+    setExpensePaymentMethod("");
+    setExpenseNotes("");
+    setExpenseFileId(null);
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         const vehicleId = Number(id);
-        const [vehicleData, branchesData, linksData] = await Promise.all([
+        const [vehicleData, branchesData, linksData, expensesData] = await Promise.all([
           api.getVehicle(vehicleId),
           api.getBranches(),
           api.listVehicleLinks(vehicleId),
+          api.listVehicleExpenses(vehicleId),
         ]);
         setVehicle(vehicleData);
         setBranches(branchesData);
         setLinks(linksData);
+        setExpenses(expensesData);
         await Promise.all([refreshFiles(vehicleId), refreshPhotos(vehicleId)]);
       } catch (error) {
         notifications.show({
@@ -282,6 +361,100 @@ export default function VehicleDetailPage() {
     } finally {
       setConfirmFileDeleteOpen(false);
       setFileToDelete(null);
+    }
+  };
+
+  const handleOpenCreateExpense = () => {
+    resetExpenseForm();
+    setExpenseModalOpen(true);
+  };
+
+  const handleOpenEditExpense = (expense: VehicleExpense) => {
+    resetExpenseForm(expense);
+    setExpenseModalOpen(true);
+  };
+
+  const handleSaveExpense = async () => {
+    if (!id) return;
+    if (!expenseDate || !expenseCategory || expenseAmount === null || expenseAmount <= 0) {
+      notifications.show({
+        title: "Error",
+        message: "Completa fecha, categoria e importe valido",
+        color: "red",
+      });
+      return;
+    }
+
+    const payloadBase: ExpenseCreateInput = {
+      amount: expenseAmount,
+      currency: expenseCurrency.trim() || "EUR",
+      date: expenseDate.toISOString().split("T")[0],
+      category: expenseCategory,
+      vendor: expenseVendor.trim() || undefined,
+      invoice_ref: expenseInvoiceRef.trim() || undefined,
+      payment_method: expensePaymentMethod.trim() || undefined,
+      notes: expenseNotes.trim() || undefined,
+      linked_vehicle_file_id: expenseFileId ?? undefined,
+    };
+
+    try {
+      setSavingExpense(true);
+      if (editingExpense?.id) {
+        const updatePayload: ExpenseUpdateInput = payloadBase;
+        await api.updateVehicleExpense(Number(id), editingExpense.id, updatePayload);
+        notifications.show({
+          title: "Exito",
+          message: "Gasto actualizado correctamente",
+          color: "green",
+        });
+      } else {
+        await api.createVehicleExpense(Number(id), payloadBase);
+        notifications.show({
+          title: "Exito",
+          message: "Gasto creado correctamente",
+          color: "green",
+        });
+      }
+      setExpenseModalOpen(false);
+      resetExpenseForm();
+      await refreshExpenses(Number(id));
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al guardar gasto",
+        color: "red",
+      });
+    } finally {
+      setSavingExpense(false);
+    }
+  };
+
+  const handleConfirmDeleteExpense = (expense: VehicleExpense) => {
+    setExpenseToDelete(expense);
+    setConfirmExpenseDeleteOpen(true);
+  };
+
+  const handleDeleteExpense = async () => {
+    if (!id || !expenseToDelete?.id) {
+      return;
+    }
+    try {
+      await api.deleteVehicleExpense(Number(id), expenseToDelete.id);
+      notifications.show({
+        title: "Exito",
+        message: "Gasto eliminado correctamente",
+        color: "green",
+      });
+      await refreshExpenses(Number(id));
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al eliminar gasto",
+        color: "red",
+      });
+    } finally {
+      setConfirmExpenseDeleteOpen(false);
+      setExpenseToDelete(null);
     }
   };
 
@@ -551,6 +724,68 @@ export default function VehicleDetailPage() {
         )}
       </Card>
 
+      {/* Gastos */}
+      <Card withBorder shadow="xs" radius="md">
+        <Group justify="space-between" mb="md">
+          <Title order={3}>Gastos</Title>
+          <Button onClick={handleOpenCreateExpense} leftSection={<IconPlus size={18} />}>
+            Anadir gasto
+          </Button>
+        </Group>
+
+        {expenses.length === 0 ? (
+          <Text c="dimmed" size="sm">
+            Sin gastos registrados
+          </Text>
+        ) : (
+          <Table striped>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Fecha</Table.Th>
+                <Table.Th>Categoria</Table.Th>
+                <Table.Th>Proveedor</Table.Th>
+                <Table.Th>Importe</Table.Th>
+                <Table.Th w={120} style={{ textAlign: "center" }}>
+                  Acciones
+                </Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {expenses.map((expense) => (
+                <Table.Tr key={expense.id}>
+                  <Table.Td>{formatDate(expense.date)}</Table.Td>
+                  <Table.Td>{expenseCategoryLabels[expense.category]}</Table.Td>
+                  <Table.Td>{expense.vendor || "-"}</Table.Td>
+                  <Table.Td>
+                    {formatCurrency(Number(expense.amount))} {expense.currency}
+                  </Table.Td>
+                  <Table.Td style={{ textAlign: "center" }}>
+                    <Group gap={0} justify="center">
+                      <ActionIcon
+                        variant="light"
+                        color="blue"
+                        onClick={() => handleOpenEditExpense(expense)}
+                        title="Editar gasto"
+                      >
+                        <IconPencil size={18} />
+                      </ActionIcon>
+                      <ActionIcon
+                        variant="light"
+                        color="red"
+                        onClick={() => handleConfirmDeleteExpense(expense)}
+                        title="Eliminar gasto"
+                      >
+                        <IconTrash size={18} />
+                      </ActionIcon>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
+      </Card>
+
       {/* Documentos y gastos */}
       <Card withBorder shadow="xs" radius="md">
         <Title order={3} mb="md">
@@ -698,6 +933,114 @@ export default function VehicleDetailPage() {
         )}
       </Card>
 
+
+      <Modal
+        opened={expenseModalOpen}
+        onClose={() => {
+          setExpenseModalOpen(false);
+          resetExpenseForm();
+        }}
+        title={editingExpense ? "Editar gasto" : "Nuevo gasto"}
+        centered
+      >
+        <Stack gap="sm">
+          <DateInput
+            label="Fecha"
+            value={expenseDate}
+            onChange={(value) => setExpenseDate(value)}
+            required
+          />
+          <Select
+            label="Categoria"
+            data={Object.entries(expenseCategoryLabels).map(([value, label]) => ({
+              value,
+              label,
+            }))}
+            value={expenseCategory}
+            onChange={(value) => setExpenseCategory(value ? (value as VehicleExpenseCategory) : null)}
+            required
+          />
+          <NumberInput
+            label="Importe"
+            value={expenseAmount ?? undefined}
+            onChange={(value) => setExpenseAmount(typeof value === "number" ? value : null)}
+            min={0}
+            decimalScale={2}
+            required
+          />
+          <TextInput
+            label="Moneda"
+            value={expenseCurrency}
+            onChange={(e) => setExpenseCurrency(e.currentTarget.value)}
+          />
+          <TextInput
+            label="Proveedor"
+            value={expenseVendor}
+            onChange={(e) => setExpenseVendor(e.currentTarget.value)}
+          />
+          <TextInput
+            label="Factura"
+            value={expenseInvoiceRef}
+            onChange={(e) => setExpenseInvoiceRef(e.currentTarget.value)}
+          />
+          <TextInput
+            label="Metodo de pago"
+            value={expensePaymentMethod}
+            onChange={(e) => setExpensePaymentMethod(e.currentTarget.value)}
+          />
+          <TextInput
+            label="Notas"
+            value={expenseNotes}
+            onChange={(e) => setExpenseNotes(e.currentTarget.value)}
+          />
+          <Select
+            label="Archivo vinculado"
+            placeholder="Selecciona un archivo"
+            data={files
+              .filter((file) => file.id)
+              .map((file) => ({
+                value: String(file.id),
+                label: file.original_name,
+              }))}
+            value={expenseFileId ? String(expenseFileId) : null}
+            onChange={(value) => setExpenseFileId(value ? Number(value) : null)}
+            clearable
+          />
+          <Group justify="flex-end" mt="sm">
+            <Button
+              variant="light"
+              onClick={() => {
+                setExpenseModalOpen(false);
+                resetExpenseForm();
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveExpense} loading={savingExpense}>
+              Guardar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={confirmExpenseDeleteOpen}
+        onClose={() => setConfirmExpenseDeleteOpen(false)}
+        title="Eliminar gasto"
+        centered
+      >
+        <Stack gap="md">
+          <Text>Estas seguro de que deseas eliminar este gasto?</Text>
+          <Group justify="flex-end">
+            <Button variant="light" onClick={() => setConfirmExpenseDeleteOpen(false)}>
+              Cancelar
+            </Button>
+            <Button color="red" onClick={handleDeleteExpense}>
+              Eliminar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       {/* Modal de confirmación para eliminar */}
       <Modal
