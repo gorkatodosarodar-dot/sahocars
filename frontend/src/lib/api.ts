@@ -127,6 +127,27 @@ export type ExpenseCreateInput = {
 
 export type ExpenseUpdateInput = Partial<ExpenseCreateInput>;
 
+export type VehicleEventType =
+  | "STATUS_CHANGE"
+  | "EXPENSE_CREATED"
+  | "EXPENSE_UPDATED"
+  | "EXPENSE_DELETED"
+  | "VISIT_CREATED"
+  | "VISIT_DELETED"
+  | "FILE_UPLOADED"
+  | "FILE_DELETED"
+  | "NOTE_CREATED"
+  | "NOTE_DELETED"
+  | "VEHICLE_UPDATED";
+
+export type VehicleEvent = {
+  id: number;
+  type: VehicleEventType;
+  created_at: string;
+  summary: string;
+  payload: Record<string, unknown>;
+};
+
 export type Expense = {
   id?: number;
   vehicle_id: number;
@@ -327,6 +348,13 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }).then(mapVehicle),
+  getVehicleTimeline: (vehicleId: number, params?: { limit?: number; types?: VehicleEventType[] }) => {
+    const search = new URLSearchParams();
+    if (params?.limit) search.append("limit", String(params.limit));
+    params?.types?.forEach((type) => search.append("type", type));
+    const qs = search.toString();
+    return fetchJson<VehicleEvent[]>(`/vehicles/${vehicleId}/timeline${qs ? `?${qs}` : ""}`);
+  },
   listVehicleFiles: (vehicleId: number, category?: VehicleFileCategory) => {
     const qs = category ? `?category=${encodeURIComponent(category)}` : "";
     return fetchJson<VehicleFile[]>(`/vehicles/${vehicleId}/files${qs}`);

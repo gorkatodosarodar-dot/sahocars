@@ -19,6 +19,8 @@ import {
   VehicleVisit,
   VehicleVisitCreateInput,
   VehicleKpis,
+  VehicleEvent,
+  VehicleEventType,
   formatCurrency,
   formatDate,
 } from "../lib/api";
@@ -35,6 +37,8 @@ export default function VehicleDetailPage() {
   const [photos, setPhotos] = useState<VehicleFile[]>([]);
   const [visits, setVisits] = useState<VehicleVisit[]>([]);
   const [kpis, setKpis] = useState<VehicleKpis | null>(null);
+  const [timeline, setTimeline] = useState<VehicleEvent[]>([]);
+  const [timelineType, setTimelineType] = useState<VehicleEventType | null>(null);
   const [loading, setLoading] = useState(true);
   const [newLinkTitle, setNewLinkTitle] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
@@ -106,6 +110,17 @@ export default function VehicleDetailPage() {
     devuelto: "violet",
   };
 
+  const timelineTypeOptions: { value: VehicleEventType; label: string }[] = [
+    { value: "STATUS_CHANGE", label: "Cambio de estado" },
+    { value: "EXPENSE_CREATED", label: "Gasto creado" },
+    { value: "EXPENSE_UPDATED", label: "Gasto actualizado" },
+    { value: "EXPENSE_DELETED", label: "Gasto eliminado" },
+    { value: "VISIT_CREATED", label: "Visita creada" },
+    { value: "VISIT_DELETED", label: "Visita eliminada" },
+    { value: "FILE_UPLOADED", label: "Archivo subido" },
+    { value: "FILE_DELETED", label: "Archivo eliminado" },
+  ];
+
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     const kb = bytes / 1024;
@@ -153,6 +168,21 @@ export default function VehicleDetailPage() {
       notifications.show({
         title: "Error",
         message: error instanceof Error ? error.message : "Error al cargar gastos",
+        color: "red",
+      });
+    }
+  };
+
+  const refreshTimeline = async (vehicleId: number, type?: VehicleEventType | null) => {
+    try {
+      const data = await api.getVehicleTimeline(vehicleId, {
+        types: type ? [type] : undefined,
+      });
+      setTimeline(data);
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al cargar timeline",
         color: "red",
       });
     }
@@ -210,13 +240,14 @@ export default function VehicleDetailPage() {
       try {
         setLoading(true);
         const vehicleId = Number(id);
-        const [vehicleData, branchesData, linksData, expensesData, visitsData, kpisData] = await Promise.all([
+        const [vehicleData, branchesData, linksData, expensesData, visitsData, kpisData, timelineData] = await Promise.all([
           api.getVehicle(vehicleId),
           api.getBranches(),
           api.listVehicleLinks(vehicleId),
           api.listVehicleExpenses(vehicleId),
           api.listVehicleVisits(vehicleId),
           api.getVehicleKpis(vehicleId),
+          api.getVehicleTimeline(vehicleId),
         ]);
         setVehicle(vehicleData);
         setBranches(branchesData);
@@ -224,6 +255,7 @@ export default function VehicleDetailPage() {
         setExpenses(expensesData);
         setVisits(visitsData);
         setKpis(kpisData);
+        setTimeline(timelineData);
         setStatusValue(vehicleData.state as VehicleStatus | null);
         await Promise.all([refreshFiles(vehicleId), refreshPhotos(vehicleId)]);
       } catch (error) {
@@ -353,6 +385,7 @@ export default function VehicleDetailPage() {
         color: "green",
       });
       await refreshFiles(Number(id));
+      await refreshTimeline(Number(id), timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -391,6 +424,7 @@ export default function VehicleDetailPage() {
         color: "green",
       });
       await refreshPhotos(Number(id));
+      await refreshTimeline(Number(id), timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -418,6 +452,7 @@ export default function VehicleDetailPage() {
       } else {
         await refreshFiles(Number(id));
       }
+      await refreshTimeline(Number(id), timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -484,6 +519,7 @@ export default function VehicleDetailPage() {
       setExpenseModalOpen(false);
       resetExpenseForm();
       await refreshExpenses(Number(id));
+      await refreshTimeline(Number(id), timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -512,6 +548,7 @@ export default function VehicleDetailPage() {
         color: "green",
       });
       await refreshExpenses(Number(id));
+      await refreshTimeline(Number(id), timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -549,6 +586,7 @@ export default function VehicleDetailPage() {
       setVehicle(updated);
       setStatusValue(updated.state as VehicleStatus | null);
       setStatusModalOpen(false);
+      await refreshTimeline(Number(id), timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -557,6 +595,14 @@ export default function VehicleDetailPage() {
       });
     } finally {
       setSavingStatus(false);
+    }
+  };
+
+  const handleTimelineFilter = (value: string | null) => {
+    const nextType = value ? (value as VehicleEventType) : null;
+    setTimelineType(nextType);
+    if (id) {
+      refreshTimeline(Number(id), nextType);
     }
   };
 
@@ -602,6 +648,7 @@ export default function VehicleDetailPage() {
       setVisitModalOpen(false);
       resetVisitForm();
       await refreshVisits(Number(id));
+      await refreshTimeline(Number(id), timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -630,6 +677,7 @@ export default function VehicleDetailPage() {
         color: "green",
       });
       await refreshVisits(Number(id));
+      await refreshTimeline(Number(id), timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -1088,6 +1136,44 @@ export default function VehicleDetailPage() {
               ))}
             </Table.Tbody>
           </Table>
+        )}
+      </Card>
+
+      {/* Timeline */}
+      <Card withBorder shadow="xs" radius="md">
+        <Group justify="space-between" mb="md">
+          <Title order={3}>Timeline</Title>
+          <Select
+            placeholder="Todos"
+            data={timelineTypeOptions}
+            value={timelineType}
+            onChange={handleTimelineFilter}
+            clearable
+          />
+        </Group>
+
+        {timeline.length === 0 ? (
+          <Text c="dimmed" size="sm">
+            Sin eventos registrados
+          </Text>
+        ) : (
+          <Stack gap="xs">
+            {timeline.map((event) => (
+              <Card key={event.id} withBorder shadow="xs" radius="sm">
+                <Group justify="space-between">
+                  <Stack gap={2}>
+                    <Text fw={500}>{event.summary}</Text>
+                    <Text size="xs" c="dimmed">
+                      {event.type}
+                    </Text>
+                  </Stack>
+                  <Text size="sm" c="dimmed">
+                    {formatDate(event.created_at)}
+                  </Text>
+                </Group>
+              </Card>
+            ))}
+          </Stack>
         )}
       </Card>
 
