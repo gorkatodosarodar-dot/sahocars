@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
+from services.vehicle_visits_service import create_visit, delete_visit, list_visits
+
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
 STORAGE_ROOT = Path(os.getenv("STORAGE_ROOT", "storage")).resolve()
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "20"))
@@ -114,9 +116,42 @@ class VehicleLink(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class VehicleVisit(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    vehicle_id: int = Field(foreign_key="vehicle.id")
+    visit_date: date
+    name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class VehicleLinkCreate(SQLModel):
     title: Optional[str] = None
     url: str
+
+
+class VehicleVisitCreate(SQLModel):
+    visit_date: date
+    name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class VehicleVisitOut(SQLModel):
+    id: int
+    vehicle_id: int
+    visit_date: date
+    name: str
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class VehicleCreate(SQLModel):
@@ -558,6 +593,32 @@ def delete_vehicle_link(
     session.delete(link)
     session.commit()
     return {"status": "ok"}
+
+
+@app.get("/vehicles/{vehicle_id}/visits", response_model=List[VehicleVisitOut])
+def list_vehicle_visits(vehicle_id: int, session: Session = Depends(get_session)):
+    return list_visits(session, vehicle_id)
+
+
+@app.post("/vehicles/{vehicle_id}/visits", response_model=VehicleVisitOut, status_code=201)
+def create_vehicle_visit(
+    vehicle_id: int,
+    payload: VehicleVisitCreate,
+    session: Session = Depends(get_session),
+):
+    return create_visit(session, vehicle_id, payload)
+
+
+@app.delete("/vehicles/{vehicle_id}/visits/{visit_id}")
+def delete_vehicle_visit(
+    vehicle_id: int,
+    visit_id: int,
+    session: Session = Depends(get_session),
+):
+    delete_visit(session, vehicle_id, visit_id)
+    return {"status": "ok"}
+
+
 
 
 @app.get("/documents/{document_id}")
