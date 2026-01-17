@@ -1,8 +1,20 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, Stack, Text, Title, Button, Grid, Loader, Center, TextInput, Table, Group, ActionIcon, Modal, Select } from "@mantine/core";
+import { DateInput } from "@mantine/dates";
 import { IconArrowLeft, IconExternalLink, IconTrash, IconPlus } from "@tabler/icons-react";
-import { api, Vehicle, Branch, VehicleLink, VehicleFile, VehicleFileCategory, formatCurrency, formatDate } from "../lib/api";
+import {
+  api,
+  Vehicle,
+  Branch,
+  VehicleLink,
+  VehicleFile,
+  VehicleFileCategory,
+  VehicleVisit,
+  VehicleVisitCreateInput,
+  formatCurrency,
+  formatDate,
+} from "../lib/api";
 import { notifications } from "@mantine/notifications";
 
 export default function VehicleDetailPage() {
@@ -13,6 +25,7 @@ export default function VehicleDetailPage() {
   const [links, setLinks] = useState<VehicleLink[]>([]);
   const [files, setFiles] = useState<VehicleFile[]>([]);
   const [photos, setPhotos] = useState<VehicleFile[]>([]);
+  const [visits, setVisits] = useState<VehicleVisit[]>([]);
   const [loading, setLoading] = useState(true);
   const [newLinkTitle, setNewLinkTitle] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
@@ -27,6 +40,15 @@ export default function VehicleDetailPage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [fileToDelete, setFileToDelete] = useState<VehicleFile | null>(null);
   const [confirmFileDeleteOpen, setConfirmFileDeleteOpen] = useState(false);
+  const [visitModalOpen, setVisitModalOpen] = useState(false);
+  const [visitDate, setVisitDate] = useState<Date | null>(null);
+  const [visitName, setVisitName] = useState("");
+  const [visitPhone, setVisitPhone] = useState("");
+  const [visitEmail, setVisitEmail] = useState("");
+  const [visitNotes, setVisitNotes] = useState("");
+  const [savingVisit, setSavingVisit] = useState(false);
+  const [visitToDelete, setVisitToDelete] = useState<VehicleVisit | null>(null);
+  const [confirmVisitDeleteOpen, setConfirmVisitDeleteOpen] = useState(false);
 
   const formatFileSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
@@ -67,19 +89,42 @@ export default function VehicleDetailPage() {
     }
   };
 
+  const refreshVisits = async (vehicleId: number) => {
+    try {
+      const data = await api.listVehicleVisits(vehicleId);
+      setVisits(data);
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al cargar visitas",
+        color: "red",
+      });
+    }
+  };
+
+  const resetVisitForm = () => {
+    setVisitDate(null);
+    setVisitName("");
+    setVisitPhone("");
+    setVisitEmail("");
+    setVisitNotes("");
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       try {
         setLoading(true);
         const vehicleId = Number(id);
-        const [vehicleData, branchesData, linksData] = await Promise.all([
+        const [vehicleData, branchesData, linksData, visitsData] = await Promise.all([
           api.getVehicle(vehicleId),
           api.getBranches(),
           api.listVehicleLinks(vehicleId),
+          api.listVehicleVisits(vehicleId),
         ]);
         setVehicle(vehicleData);
         setBranches(branchesData);
         setLinks(linksData);
+        setVisits(visitsData);
         await Promise.all([refreshFiles(vehicleId), refreshPhotos(vehicleId)]);
       } catch (error) {
         notifications.show({
@@ -282,6 +327,88 @@ export default function VehicleDetailPage() {
     } finally {
       setConfirmFileDeleteOpen(false);
       setFileToDelete(null);
+    }
+  };
+
+  const handleOpenVisitModal = () => {
+    resetVisitForm();
+    setVisitModalOpen(true);
+  };
+
+  const handleSaveVisit = async () => {
+    if (!id || !visitDate || !visitName.trim()) {
+      notifications.show({
+        title: "Error",
+        message: "Fecha y nombre son requeridos",
+        color: "red",
+      });
+      return;
+    }
+    if (!visitPhone.trim() && !visitEmail.trim()) {
+      notifications.show({
+        title: "Error",
+        message: "Telefono o email es requerido",
+        color: "red",
+      });
+      return;
+    }
+
+    const payload: VehicleVisitCreateInput = {
+      visit_date: visitDate.toISOString().split("T")[0],
+      name: visitName.trim(),
+      phone: visitPhone.trim() || undefined,
+      email: visitEmail.trim() || undefined,
+      notes: visitNotes.trim() || undefined,
+    };
+
+    try {
+      setSavingVisit(true);
+      await api.createVehicleVisit(Number(id), payload);
+      notifications.show({
+        title: "Exito",
+        message: "Visita creada correctamente",
+        color: "green",
+      });
+      setVisitModalOpen(false);
+      resetVisitForm();
+      await refreshVisits(Number(id));
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al crear visita",
+        color: "red",
+      });
+    } finally {
+      setSavingVisit(false);
+    }
+  };
+
+  const handleConfirmDeleteVisit = (visit: VehicleVisit) => {
+    setVisitToDelete(visit);
+    setConfirmVisitDeleteOpen(true);
+  };
+
+  const handleDeleteVisit = async () => {
+    if (!id || !visitToDelete?.id) {
+      return;
+    }
+    try {
+      await api.deleteVehicleVisit(Number(id), visitToDelete.id);
+      notifications.show({
+        title: "Exito",
+        message: "Visita eliminada correctamente",
+        color: "green",
+      });
+      await refreshVisits(Number(id));
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al eliminar visita",
+        color: "red",
+      });
+    } finally {
+      setConfirmVisitDeleteOpen(false);
+      setVisitToDelete(null);
     }
   };
 
@@ -551,6 +678,58 @@ export default function VehicleDetailPage() {
         )}
       </Card>
 
+      {/* Visitas / Interesados */}
+      <Card withBorder shadow="xs" radius="md">
+        <Group justify="space-between" mb="md">
+          <Title order={3}>Visitas / Interesados</Title>
+          <Button onClick={handleOpenVisitModal} leftSection={<IconPlus size={18} />}>
+            Anadir visita
+          </Button>
+        </Group>
+
+        {visits.length === 0 ? (
+          <Text c="dimmed" size="sm">
+            Sin visitas registradas
+          </Text>
+        ) : (
+          <Table striped>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Fecha</Table.Th>
+                <Table.Th>Nombre</Table.Th>
+                <Table.Th>Telefono</Table.Th>
+                <Table.Th>Email</Table.Th>
+                <Table.Th>Observaciones</Table.Th>
+                <Table.Th w={80} style={{ textAlign: "center" }}>
+                  Acciones
+                </Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {visits.map((visit) => (
+                <Table.Tr key={visit.id}>
+                  <Table.Td>{formatDate(visit.visit_date)}</Table.Td>
+                  <Table.Td>{visit.name}</Table.Td>
+                  <Table.Td>{visit.phone || "-"}</Table.Td>
+                  <Table.Td>{visit.email || "-"}</Table.Td>
+                  <Table.Td>{visit.notes || "-"}</Table.Td>
+                  <Table.Td style={{ textAlign: "center" }}>
+                    <ActionIcon
+                      variant="light"
+                      color="red"
+                      onClick={() => handleConfirmDeleteVisit(visit)}
+                      title="Eliminar visita"
+                    >
+                      <IconTrash size={18} />
+                    </ActionIcon>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
+      </Card>
+
       {/* Documentos y gastos */}
       <Card withBorder shadow="xs" radius="md">
         <Title order={3} mb="md">
@@ -697,6 +876,80 @@ export default function VehicleDetailPage() {
           </Grid>
         )}
       </Card>
+
+
+      <Modal
+        opened={visitModalOpen}
+        onClose={() => {
+          setVisitModalOpen(false);
+          resetVisitForm();
+        }}
+        title="Nueva visita"
+        centered
+      >
+        <Stack gap="sm">
+          <DateInput
+            label="Fecha"
+            value={visitDate}
+            onChange={(value) => setVisitDate(value)}
+            required
+          />
+          <TextInput
+            label="Nombre"
+            value={visitName}
+            onChange={(e) => setVisitName(e.currentTarget.value)}
+            required
+          />
+          <TextInput
+            label="Telefono"
+            value={visitPhone}
+            onChange={(e) => setVisitPhone(e.currentTarget.value)}
+          />
+          <TextInput
+            label="Email"
+            value={visitEmail}
+            onChange={(e) => setVisitEmail(e.currentTarget.value)}
+          />
+          <TextInput
+            label="Observaciones"
+            value={visitNotes}
+            onChange={(e) => setVisitNotes(e.currentTarget.value)}
+          />
+          <Group justify="flex-end" mt="sm">
+            <Button
+              variant="light"
+              onClick={() => {
+                setVisitModalOpen(false);
+                resetVisitForm();
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveVisit} loading={savingVisit}>
+              Guardar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={confirmVisitDeleteOpen}
+        onClose={() => setConfirmVisitDeleteOpen(false)}
+        title="Eliminar visita"
+        centered
+      >
+        <Stack gap="md">
+          <Text>Estas seguro de que deseas eliminar esta visita?</Text>
+          <Group justify="flex-end">
+            <Button variant="light" onClick={() => setConfirmVisitDeleteOpen(false)}>
+              Cancelar
+            </Button>
+            <Button color="red" onClick={handleDeleteVisit}>
+              Eliminar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
 
 
       {/* Modal de confirmación para eliminar */}

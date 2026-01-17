@@ -47,6 +47,25 @@ export type VehicleFile = {
   updated_at?: string;
 };
 
+export type VehicleVisit = {
+  id?: number;
+  vehicle_id: number;
+  visit_date: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  notes?: string | null;
+  created_at?: string | null;
+};
+
+export type VehicleVisitCreateInput = {
+  visit_date: string;
+  name: string;
+  phone?: string | null;
+  email?: string | null;
+  notes?: string | null;
+};
+
 export type Expense = {
   id?: number;
   vehicle_id: number;
@@ -206,6 +225,22 @@ export const api = {
     if (response.status === 404 && detail.includes("Not Found")) {
       throw new Error("El backend no tiene el endpoint de enlaces para vehiculos.");
     }
+    if (!response.ok) {
+      throw buildError(response.status, response.statusText, detail);
+    }
+  },
+  listVehicleVisits: (vehicleId: number) =>
+    fetchJson<VehicleVisit[]>(`/vehicles/${vehicleId}/visits`),
+  createVehicleVisit: (vehicleId: number, payload: VehicleVisitCreateInput) =>
+    fetchJson<VehicleVisit>(`/vehicles/${vehicleId}/visits`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  deleteVehicleVisit: async (vehicleId: number, visitId: number) => {
+    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/visits/${visitId}`, {
+      method: "DELETE",
+    });
+    const detail = await response.text();
     if (!response.ok) {
       throw buildError(response.status, response.statusText, detail);
     }
