@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
+from services.vehicle_finance_service import get_vehicle_kpis
 from services.vehicle_visits_service import create_visit, delete_visit, list_visits
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
@@ -152,6 +153,16 @@ class VehicleVisitOut(SQLModel):
 
     class Config:
         from_attributes = True
+
+
+class VehicleKpisOut(SQLModel):
+    vehicle_id: int
+    total_expenses: float
+    total_cost: Optional[float] = None
+    sale_price: Optional[float] = None
+    gross_margin: Optional[float] = None
+    roi: Optional[float] = None
+    days_in_stock: Optional[int] = None
 
 
 class VehicleCreate(SQLModel):
@@ -617,6 +628,11 @@ def delete_vehicle_visit(
 ):
     delete_visit(session, vehicle_id, visit_id)
     return {"status": "ok"}
+
+
+@app.get("/vehicles/{vehicle_id}/kpis", response_model=VehicleKpisOut)
+def vehicle_kpis(vehicle_id: int, session: Session = Depends(get_session)):
+    return get_vehicle_kpis(session, vehicle_id)
 
 
 
