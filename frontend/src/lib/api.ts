@@ -43,8 +43,7 @@ export type VehicleFile = {
   size_bytes: number;
   notes?: string | null;
   created_at?: string | null;
-  created_at?: string;
-  updated_at?: string;
+  updated_at?: string | null;
 };
 
 export type VehicleVisit = {
@@ -75,6 +74,44 @@ export type VehicleKpis = {
   roi?: number | null;
   days_in_stock?: number | null;
 };
+
+export type VehicleExpenseCategory =
+  | "MECHANICAL"
+  | "TIRES"
+  | "TRANSPORT"
+  | "ADMIN"
+  | "CLEANING"
+  | "OTHER";
+
+export type VehicleExpense = {
+  id?: number;
+  vehicle_id: number;
+  amount: number;
+  currency: string;
+  date: string;
+  category: VehicleExpenseCategory;
+  vendor?: string | null;
+  invoice_ref?: string | null;
+  payment_method?: string | null;
+  notes?: string | null;
+  linked_vehicle_file_id?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type ExpenseCreateInput = {
+  amount: number;
+  currency?: string;
+  date: string;
+  category: VehicleExpenseCategory;
+  vendor?: string | null;
+  invoice_ref?: string | null;
+  payment_method?: string | null;
+  notes?: string | null;
+  linked_vehicle_file_id?: number | null;
+};
+
+export type ExpenseUpdateInput = Partial<ExpenseCreateInput>;
 
 export type Expense = {
   id?: number;
@@ -158,8 +195,7 @@ async function fetchOptionalLinks(path: string): Promise<VehicleLink[]> {
 
 export const api = {
   getBranches: () => fetchJson<Branch[]>("/branches"),
-  getVehicle: (vehicleId: number) =>
-    fetchJson<Vehicle>(`/vehicles/${vehicleId}`).then(mapVehicle),
+  getVehicle: (vehicleId: number) => fetchJson<Vehicle>(`/vehicles/${vehicleId}`).then(mapVehicle),
   getDashboard: (params: { from?: string; to?: string; branchId?: number }) => {
     const search = new URLSearchParams();
     if (params.from) search.append("from_date", params.from);
@@ -177,12 +213,6 @@ export const api = {
     const qs = search.toString();
     return fetchJson<any[]>(`/vehicles${qs ? `?${qs}` : ""}`).then((res) => res.map(mapVehicle));
   },
-  getVehicle: (id: number) =>
-    fetchJson<any>(`/vehicles/${id}`).then((res) => ({
-      ...res,
-      location_id: res.branch_id,
-      state: res.status,
-    })),
   createVehicle: (payload: Vehicle) => {
     // Mapear nombres de campos frontend a backend
     const today = new Date().toISOString().split("T")[0];
@@ -248,6 +278,27 @@ export const api = {
     }),
   deleteVehicleVisit: async (vehicleId: number, visitId: number) => {
     const response = await fetch(`${API_URL}/vehicles/${vehicleId}/visits/${visitId}`, {
+      method: "DELETE",
+    });
+    const detail = await response.text();
+    if (!response.ok) {
+      throw buildError(response.status, response.statusText, detail);
+    }
+  },
+  listVehicleExpenses: (vehicleId: number) =>
+    fetchJson<VehicleExpense[]>(`/vehicles/${vehicleId}/expenses`),
+  createVehicleExpense: (vehicleId: number, payload: ExpenseCreateInput) =>
+    fetchJson<VehicleExpense>(`/vehicles/${vehicleId}/expenses`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  updateVehicleExpense: (vehicleId: number, expenseId: number, payload: ExpenseUpdateInput) =>
+    fetchJson<VehicleExpense>(`/vehicles/${vehicleId}/expenses/${expenseId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteVehicleExpense: async (vehicleId: number, expenseId: number) => {
+    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/expenses/${expenseId}`, {
       method: "DELETE",
     });
     const detail = await response.text();
