@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Card, Stack, Text, Title, Button, Grid, Loader, Center, TextInput, Table, Group, ActionIcon, Modal, Select, NumberInput } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
-import { IconArrowLeft, IconExternalLink, IconTrash, IconPlus, IconPencil } from "@tabler/icons-react";
+import { IconArrowLeft, IconExternalLink, IconTrash, IconPlus, IconPencil, IconDownload } from "@tabler/icons-react";
 import {
   api,
   Vehicle,
@@ -202,7 +202,7 @@ export default function VehicleDetailPage() {
       } catch (error) {
         notifications.show({
           title: "Error",
-          message: error instanceof Error ? error.message : "Error al cargar el veh├¡culo",
+          message: error instanceof Error ? error.message : "Error al cargar el vehiculo",
           color: "red",
           autoClose: false,
         });
@@ -236,7 +236,7 @@ export default function VehicleDetailPage() {
           Volver
         </Button>
         <Card withBorder shadow="xs" radius="md">
-          <Text>Veh├¡culo no encontrado</Text>
+          <Text>Vehiculo no encontrado</Text>
         </Card>
       </Stack>
     );
@@ -266,7 +266,7 @@ export default function VehicleDetailPage() {
       setNewLinkTitle("");
       setNewLinkUrl("");
       notifications.show({
-        title: "├ëxito",
+        title: "Exito",
         message: "Enlace creado correctamente",
         color: "green",
       });
@@ -288,7 +288,7 @@ export default function VehicleDetailPage() {
       setConfirmDeleteOpen(false);
       setDeletingLinkId(null);
       notifications.show({
-        title: "├ëxito",
+        title: "Exito",
         message: "Enlace eliminado correctamente",
         color: "green",
       });
@@ -586,7 +586,7 @@ export default function VehicleDetailPage() {
 
   return (
     <Stack gap="lg">
-      <Title order={2}>Detalle del veh├¡culo</Title>
+      <Title order={2}>Detalle del vehiculo</Title>
 
       <Button
         leftSection={<IconArrowLeft size={20} />}
@@ -603,12 +603,12 @@ export default function VehicleDetailPage() {
         <Grid.Col span={{ base: 12, md: 6 }}>
           <Card withBorder shadow="xs" radius="md">
             <Title order={3} mb="md">
-              Informaci├│n general
+              Informacion general
             </Title>
             <Stack gap="sm">
               <div>
                 <Text size="sm" c="dimmed">
-                  Matr├¡cula
+                  Matricula
                 </Text>
                 <Text fw={500}>{vehicle.license_plate || "-"}</Text>
               </div>
@@ -632,13 +632,13 @@ export default function VehicleDetailPage() {
               </div>
               <div>
                 <Text size="sm" c="dimmed">
-                  Versi├│n
+                  Version
                 </Text>
                 <Text fw={500}>{vehicle.version || "-"}</Text>
               </div>
               <div>
                 <Text size="sm" c="dimmed">
-                  A├▒o
+                  Ano
                 </Text>
                 <Text fw={500}>{vehicle.year || "-"}</Text>
               </div>
@@ -680,7 +680,7 @@ export default function VehicleDetailPage() {
               </div>
               <div>
                 <Text size="sm" c="dimmed">
-                  Kil├│metros
+                  Kilometros
                 </Text>
                 <Text fw={500}>{vehicle.km ? vehicle.km.toLocaleString() : "-"}</Text>
               </div>
@@ -691,7 +691,7 @@ export default function VehicleDetailPage() {
         <Grid.Col span={{ base: 12, md: 6 }}>
           <Card withBorder shadow="xs" radius="md">
             <Title order={3} mb="md">
-              Informaci├│n financiera
+              Informacion financiera
             </Title>
             <Stack gap="sm">
               <div>
@@ -816,7 +816,7 @@ export default function VehicleDetailPage() {
         {/* Form para agregar nuevo enlace */}
         <Stack gap="sm" mb="lg">
           <TextInput
-            placeholder="T├¡tulo (ej: Milanuncios)"
+            placeholder="Titulo (ej: Milanuncios)"
             value={newLinkTitle}
             onChange={(e) => setNewLinkTitle(e.currentTarget.value)}
             disabled={creatingLink}
@@ -847,7 +847,7 @@ export default function VehicleDetailPage() {
           <Table striped>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>T├¡tulo</Table.Th>
+                <Table.Th>Titulo</Table.Th>
                 <Table.Th>URL</Table.Th>
                 <Table.Th>Fecha</Table.Th>
                 <Table.Th w={100} style={{ textAlign: "center" }}>
@@ -878,7 +878,7 @@ export default function VehicleDetailPage() {
                         variant="light"
                         color="blue"
                         onClick={() => window.open(link.url, "_blank")}
-                        title="Abrir en nueva pesta├▒a"
+                        title="Abrir en nueva pestana"
                       >
                         <IconExternalLink size={18} />
                       </ActionIcon>
@@ -1143,17 +1143,29 @@ export default function VehicleDetailPage() {
                       <Text size="sm" lineClamp={1}>
                         {photo.original_name}
                       </Text>
-                      <ActionIcon
-                        variant="light"
-                        color="red"
-                        onClick={() => {
-                          setFileToDelete(photo);
-                          setConfirmFileDeleteOpen(true);
-                        }}
-                        title="Eliminar foto"
-                      >
-                        <IconTrash size={18} />
-                      </ActionIcon>
+                      <Group gap={4}>
+                        <ActionIcon
+                          variant="light"
+                          color="blue"
+                          component="a"
+                          href={api.downloadVehicleFileUrl(Number(id), photo.id || 0)}
+                          download
+                          title="Descargar foto"
+                        >
+                          <IconDownload size={18} />
+                        </ActionIcon>
+                        <ActionIcon
+                          variant="light"
+                          color="red"
+                          onClick={() => {
+                            setFileToDelete(photo);
+                            setConfirmFileDeleteOpen(true);
+                          }}
+                          title="Eliminar foto"
+                        >
+                          <IconTrash size={18} />
+                        </ActionIcon>
+                      </Group>
                     </Group>
                   </Stack>
                 </Card>
@@ -1350,11 +1362,11 @@ export default function VehicleDetailPage() {
       <Modal
         opened={confirmDeleteOpen}
         onClose={() => setConfirmDeleteOpen(false)}
-        title="Confirmar eliminaci├│n"
+        title="Confirmar eliminacion"
         centered
       >
         <Stack gap="md">
-          <Text>┬┐Est├ís seguro de que deseas eliminar este enlace?</Text>
+          <Text>Estas seguro de que deseas eliminar este enlace?</Text>
           <Group justify="flex-end">
             <Button variant="light" onClick={() => setConfirmDeleteOpen(false)}>
               Cancelar
