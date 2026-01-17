@@ -20,6 +20,7 @@ from services.vehicle_expenses_service import (
     update_expense as update_vehicle_expense_service,
 )
 from services.vehicle_finance_service import get_vehicle_kpis
+from services.vehicle_status_service import change_status
 from services.vehicle_visits_service import create_visit, delete_visit, list_visits
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
@@ -35,12 +36,14 @@ class Branch(SQLModel, table=True):
     name: str
 
 
-class VehicleState(str):
-    PENDING = "pendiente recepcion"
-    REVIEW = "en revision"
-    SHOWROOM = "en exposicion"
+class VehicleStatus(str, Enum):
+    IN_STOCK = "pendiente recepcion"
+    IN_PREP = "en revision"
+    LISTED = "en exposicion"
     RESERVED = "reservado"
     SOLD = "vendido"
+    DISCARDED = "descartado"
+    RETURNED = "devuelto"
 
 
 class Vehicle(SQLModel, table=True):
@@ -54,7 +57,7 @@ class Vehicle(SQLModel, table=True):
     km: Optional[int] = None
     color: Optional[str] = None
     branch_id: Optional[int] = Field(default=None, foreign_key="branch.id")
-    status: Optional[str] = Field(default=VehicleState.PENDING)
+    status: Optional[VehicleStatus] = Field(default=VehicleStatus.IN_STOCK)
     purchase_price: Optional[float] = None
     sale_price: Optional[float] = None
     purchase_date: Optional[date] = None
@@ -198,6 +201,11 @@ class VehicleKpisOut(SQLModel):
     days_in_stock: Optional[int] = None
 
 
+class VehicleStatusChange(SQLModel):
+    status: VehicleStatus
+    note: Optional[str] = None
+
+
 class VehicleCreate(SQLModel):
     vin: str
     license_plate: str
@@ -210,7 +218,7 @@ class VehicleCreate(SQLModel):
     purchase_date: str  # Acepta string en formato ISO
     version: Optional[str] = None
     color: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[VehicleStatus] = None
     notes: Optional[str] = None
 
 
@@ -357,7 +365,7 @@ def create_vehicle(vehicle_data: VehicleCreate, session: Session = Depends(get_s
 
 @app.get("/vehicles", response_model=List[Vehicle])
 def list_vehicles(
-    state: Optional[str] = None,
+    state: Optional[VehicleStatus] = None,
     branch_id: Optional[int] = None,
     from_date: Optional[date] = Query(None, description="filter by purchase date >="),
     to_date: Optional[date] = Query(None, description="filter by purchase date <="),
@@ -403,6 +411,15 @@ def update_vehicle(vehicle_id: int, data: Vehicle, session: Session = Depends(ge
     session.commit()
     session.refresh(vehicle)
     return vehicle
+
+
+@app.post("/vehicles/{vehicle_id}/status", response_model=Vehicle)
+def update_vehicle_status(
+    vehicle_id: int,
+    payload: VehicleStatusChange,
+    session: Session = Depends(get_session),
+):
+    return change_status(session, vehicle_id, payload.status, note=payload.note)
 
 
 @app.post("/vehicles/{vehicle_id}/transfer", response_model=Transfer)
@@ -462,7 +479,7 @@ def register_sale(vehicle_id: int, sale: SaleCreate, session: Session = Depends(
     sale_record = Sale(vehicle_id=vehicle_id, **sale.model_dump())
     vehicle.sale_price = sale_record.sale_price
     vehicle.sale_date = sale_record.sale_date
-    vehicle.state = VehicleState.SOLD
+    vehicle.status = VehicleStatus.SOLD
     vehicle.updated_at = datetime.utcnow()
     session.add(sale_record)
     session.add(vehicle)
