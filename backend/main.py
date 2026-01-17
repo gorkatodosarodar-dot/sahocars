@@ -4,6 +4,8 @@ import os
 import shutil
 from uuid import uuid4
 from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum
 from pathlib import Path
 from typing import List, Optional
 
@@ -11,6 +13,13 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFi
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlmodel import Field, Session, SQLModel, create_engine, select
+
+from services.vehicle_expenses_service import (
+    create_expense as create_vehicle_expense_service,
+    delete_expense as delete_vehicle_expense_service,
+    list_expenses as list_vehicle_expenses_service,
+    update_expense as update_vehicle_expense_service,
+)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
 STORAGE_ROOT = Path(os.getenv("STORAGE_ROOT", "storage")).resolve()
@@ -63,6 +72,32 @@ class Expense(SQLModel, table=True):
     notes: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+
+class VehicleExpenseCategory(str, Enum):
+    MECHANICAL = "MECHANICAL"
+    TIRES = "TIRES"
+    TRANSPORT = "TRANSPORT"
+    ADMIN = "ADMIN"
+    CLEANING = "CLEANING"
+    OTHER = "OTHER"
+
+
+class VehicleExpense(SQLModel, table=True):
+    __tablename__ = "vehicle_expenses"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    vehicle_id: int = Field(foreign_key="vehicle.id")
+    amount: Decimal
+    currency: str = Field(default="EUR")
+    date: date
+    category: VehicleExpenseCategory
+    vendor: Optional[str] = None
+    invoice_ref: Optional[str] = None
+    payment_method: Optional[str] = None
+    notes: Optional[str] = None
+    linked_vehicle_file_id: Optional[int] = Field(default=None, foreign_key="vehiclefile.id")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class Sale(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -157,6 +192,49 @@ class ExpenseCreate(SQLModel):
     amount: float
     expense_date: date
     notes: Optional[str] = None
+
+
+class VehicleExpenseCreate(SQLModel):
+    amount: Decimal
+    currency: str = "EUR"
+    date: date
+    category: VehicleExpenseCategory
+    vendor: Optional[str] = None
+    invoice_ref: Optional[str] = None
+    payment_method: Optional[str] = None
+    notes: Optional[str] = None
+    linked_vehicle_file_id: Optional[int] = None
+
+
+class VehicleExpenseUpdate(SQLModel):
+    amount: Optional[Decimal] = None
+    currency: Optional[str] = None
+    date: Optional[date] = None
+    category: Optional[VehicleExpenseCategory] = None
+    vendor: Optional[str] = None
+    invoice_ref: Optional[str] = None
+    payment_method: Optional[str] = None
+    notes: Optional[str] = None
+    linked_vehicle_file_id: Optional[int] = None
+
+
+class VehicleExpenseOut(SQLModel):
+    id: int
+    vehicle_id: int
+    amount: Decimal
+    currency: str
+    date: date
+    category: VehicleExpenseCategory
+    vendor: Optional[str] = None
+    invoice_ref: Optional[str] = None
+    payment_method: Optional[str] = None
+    notes: Optional[str] = None
+    linked_vehicle_file_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 class SaleCreate(SQLModel):
@@ -302,20 +380,34 @@ def transfer_vehicle(
     return transfer_record
 
 
-@app.get("/vehicles/{vehicle_id}/expenses", response_model=List[Expense])
-def list_expenses(vehicle_id: int, session: Session = Depends(get_session)):
-    return session.exec(select(Expense).where(Expense.vehicle_id == vehicle_id).order_by(Expense.expense_date.desc())).all()
+@app.get("/vehicles/{vehicle_id}/expenses", response_model=List[VehicleExpenseOut])
+def list_vehicle_expenses(vehicle_id: int, session: Session = Depends(get_session)):
+    return list_vehicle_expenses_service(session, vehicle_id)
 
 
-@app.post("/vehicles/{vehicle_id}/expenses", response_model=Expense)
-def add_expense(vehicle_id: int, expense: ExpenseCreate, session: Session = Depends(get_session)):
-    if not session.get(Vehicle, vehicle_id):
-        raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    expense_record = Expense(vehicle_id=vehicle_id, **expense.model_dump())
-    session.add(expense_record)
-    session.commit()
-    session.refresh(expense_record)
-    return expense_record
+@app.post("/vehicles/{vehicle_id}/expenses", response_model=VehicleExpenseOut, status_code=201)
+def create_vehicle_expense(vehicle_id: int, payload: VehicleExpenseCreate, session: Session = Depends(get_session)):
+    return create_vehicle_expense_service(session, vehicle_id, payload)
+
+
+@app.patch("/vehicles/{vehicle_id}/expenses/{expense_id}", response_model=VehicleExpenseOut)
+def update_vehicle_expense(
+    vehicle_id: int,
+    expense_id: int,
+    payload: VehicleExpenseUpdate,
+    session: Session = Depends(get_session),
+):
+    return update_vehicle_expense_service(session, vehicle_id, expense_id, payload)
+
+
+@app.delete("/vehicles/{vehicle_id}/expenses/{expense_id}")
+def delete_vehicle_expense(
+    vehicle_id: int,
+    expense_id: int,
+    session: Session = Depends(get_session),
+):
+    delete_vehicle_expense_service(session, vehicle_id, expense_id)
+    return {"status": "ok"}
 
 
 @app.post("/vehicles/{vehicle_id}/sale", response_model=Sale)
