@@ -2,17 +2,22 @@ from __future__ import annotations
 
 import os
 import shutil
+from uuid import uuid4
 from datetime import date, datetime
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
 STORAGE_ROOT = Path(os.getenv("STORAGE_ROOT", "storage")).resolve()
+MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "20"))
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+ALLOWED_PHOTO_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+ALLOWED_PHOTO_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
 
 
 class Branch(SQLModel, table=True):
@@ -87,6 +92,31 @@ class Photo(SQLModel, table=True):
     stored_path: str
     display_order: Optional[int] = None
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class VehicleFile(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    vehicle_id: int = Field(foreign_key="vehicle.id")
+    category: str
+    original_name: str
+    stored_name: str
+    mime_type: str
+    size_bytes: int
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class VehicleLink(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    vehicle_id: int = Field(foreign_key="vehicle.id")
+    title: Optional[str] = None
+    url: str
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class VehicleLinkCreate(SQLModel):
+    title: Optional[str] = None
+    url: str
 
 
 class VehicleCreate(SQLModel):
@@ -374,6 +404,160 @@ def upload_photo(
     session.commit()
     session.refresh(photo)
     return photo
+
+
+def ensure_vehicle_exists(vehicle_id: int, session: Session) -> None:
+    if not session.get(Vehicle, vehicle_id):
+        raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+
+
+def safe_extension(file_name: str) -> str:
+    return os.path.splitext(file_name)[1].lower()
+
+
+def write_upload_file(destination: Path, upload: UploadFile) -> int:
+    size_bytes = 0
+    with destination.open("wb") as buffer:
+        while True:
+            chunk = upload.file.read(1024 * 1024)
+            if not chunk:
+                break
+            size_bytes += len(chunk)
+            if size_bytes > MAX_FILE_SIZE_BYTES:
+                raise HTTPException(status_code=400, detail=f"Archivo supera el limite de {MAX_FILE_SIZE_MB}MB")
+            buffer.write(chunk)
+    return size_bytes
+
+
+@app.get("/vehicles/{vehicle_id}/files", response_model=List[VehicleFile])
+def list_vehicle_files(
+    vehicle_id: int,
+    category: Optional[str] = Query(None, description="document | expense | photo"),
+    session: Session = Depends(get_session),
+):
+    ensure_vehicle_exists(vehicle_id, session)
+    if category and category not in {"document", "expense", "photo"}:
+        raise HTTPException(status_code=400, detail="Categoria no valida")
+    query = select(VehicleFile).where(VehicleFile.vehicle_id == vehicle_id)
+    if category:
+        query = query.where(VehicleFile.category == category)
+    return session.exec(query.order_by(VehicleFile.created_at.desc())).all()
+
+
+@app.post("/vehicles/{vehicle_id}/files", response_model=VehicleFile)
+def upload_vehicle_file(
+    vehicle_id: int,
+    category: str = Form(...),
+    file: UploadFile = File(...),
+    notes: Optional[str] = Form(None),
+    session: Session = Depends(get_session),
+):
+    ensure_vehicle_exists(vehicle_id, session)
+    if category not in {"document", "expense", "photo"}:
+        raise HTTPException(status_code=400, detail="Categoria no valida")
+    if category == "photo":
+        if file.content_type not in ALLOWED_PHOTO_MIME_TYPES:
+            raise HTTPException(status_code=400, detail="Formato de imagen no permitido")
+    original_name = os.path.basename(file.filename or "archivo")
+    extension = safe_extension(original_name)
+    if category == "photo" and extension not in ALLOWED_PHOTO_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Extension de imagen no permitida")
+
+    storage_dir = STORAGE_ROOT / "vehicles" / str(vehicle_id)
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{uuid4().hex}{extension}"
+    destination = storage_dir / stored_name
+
+    try:
+        size_bytes = write_upload_file(destination, file)
+    except HTTPException:
+        if destination.exists():
+            destination.unlink()
+        raise
+    finally:
+        file.file.close()
+
+    record = VehicleFile(
+        vehicle_id=vehicle_id,
+        category=category,
+        original_name=original_name,
+        stored_name=stored_name,
+        mime_type=file.content_type or "application/octet-stream",
+        size_bytes=size_bytes,
+        notes=notes,
+    )
+    session.add(record)
+    session.commit()
+    session.refresh(record)
+    return record
+
+
+@app.get("/vehicles/{vehicle_id}/files/{file_id}/download")
+def download_vehicle_file(
+    vehicle_id: int,
+    file_id: int,
+    session: Session = Depends(get_session),
+):
+    record = session.get(VehicleFile, file_id)
+    if not record or record.vehicle_id != vehicle_id:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    file_path = STORAGE_ROOT / "vehicles" / str(vehicle_id) / record.stored_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    return FileResponse(file_path, filename=record.original_name)
+
+
+@app.delete("/vehicles/{vehicle_id}/files/{file_id}")
+def delete_vehicle_file(
+    vehicle_id: int,
+    file_id: int,
+    session: Session = Depends(get_session),
+):
+    record = session.get(VehicleFile, file_id)
+    if not record or record.vehicle_id != vehicle_id:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    file_path = STORAGE_ROOT / "vehicles" / str(vehicle_id) / record.stored_name
+    if file_path.exists():
+        file_path.unlink()
+    session.delete(record)
+    session.commit()
+    return {"status": "ok"}
+
+
+@app.get("/vehicles/{vehicle_id}/links", response_model=List[VehicleLink])
+def list_vehicle_links(vehicle_id: int, session: Session = Depends(get_session)):
+    return session.exec(
+        select(VehicleLink).where(VehicleLink.vehicle_id == vehicle_id).order_by(VehicleLink.created_at.desc())
+    ).all()
+
+
+@app.post("/vehicles/{vehicle_id}/links", response_model=VehicleLink)
+def create_vehicle_link(
+    vehicle_id: int,
+    payload: VehicleLinkCreate,
+    session: Session = Depends(get_session),
+):
+    if not session.get(Vehicle, vehicle_id):
+        raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+    link = VehicleLink(vehicle_id=vehicle_id, **payload.model_dump())
+    session.add(link)
+    session.commit()
+    session.refresh(link)
+    return link
+
+
+@app.delete("/vehicles/{vehicle_id}/links/{link_id}")
+def delete_vehicle_link(
+    vehicle_id: int,
+    link_id: int,
+    session: Session = Depends(get_session),
+):
+    link = session.get(VehicleLink, link_id)
+    if not link or link.vehicle_id != vehicle_id:
+        raise HTTPException(status_code=404, detail="Enlace no encontrado")
+    session.delete(link)
+    session.commit()
+    return {"status": "ok"}
 
 
 @app.get("/documents/{document_id}")

@@ -19,6 +19,30 @@ export type Vehicle = {
   purchase_date?: string | null;
   sale_date?: string | null;
   notes?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type VehicleLink = {
+  id?: number;
+  vehicle_id: number;
+  title?: string | null;
+  url: string;
+  created_at?: string | null;
+};
+
+export type VehicleFileCategory = "document" | "expense" | "photo";
+
+export type VehicleFile = {
+  id?: number;
+  vehicle_id: number;
+  category: VehicleFileCategory;
+  original_name: string;
+  stored_name: string;
+  mime_type: string;
+  size_bytes: number;
+  notes?: string | null;
+  created_at?: string | null;
   created_at?: string;
   updated_at?: string;
 };
@@ -77,8 +101,36 @@ async function fetchJson<T>(path: string, options: RequestInit = {}): Promise<T>
   }
 }
 
+function mapVehicle(vehicle: any): Vehicle {
+  return {
+    ...vehicle,
+    location_id: vehicle.branch_id ?? vehicle.location_id,
+    state: vehicle.status ?? vehicle.state,
+  };
+}
+
+function buildError(status: number, statusText: string, detail: string) {
+  return new Error(detail || `Error ${status}: ${statusText}`);
+}
+
+async function fetchOptionalLinks(path: string): Promise<VehicleLink[]> {
+  const response = await fetch(`${API_URL}${path}`, {
+    headers: { "Content-Type": "application/json" },
+  });
+  const detail = await response.text();
+  if (response.status === 404 && detail.includes("Not Found")) {
+    return [];
+  }
+  if (!response.ok) {
+    throw buildError(response.status, response.statusText, detail);
+  }
+  return JSON.parse(detail) as VehicleLink[];
+}
+
 export const api = {
   getBranches: () => fetchJson<Branch[]>("/branches"),
+  getVehicle: (vehicleId: number) =>
+    fetchJson<Vehicle>(`/vehicles/${vehicleId}`).then(mapVehicle),
   getDashboard: (params: { from?: string; to?: string; branchId?: number }) => {
     const search = new URLSearchParams();
     if (params.from) search.append("from_date", params.from);
@@ -94,13 +146,7 @@ export const api = {
     if (params.from) search.append("from_date", params.from);
     if (params.to) search.append("to_date", params.to);
     const qs = search.toString();
-    return fetchJson<any[]>(`/vehicles${qs ? `?${qs}` : ""}`).then((res) =>
-      res.map((v) => ({
-        ...v,
-        location_id: v.branch_id,
-        state: v.status,
-      }))
-    );
+    return fetchJson<any[]>(`/vehicles${qs ? `?${qs}` : ""}`).then((res) => res.map(mapVehicle));
   },
   getVehicle: (id: number) =>
     fetchJson<any>(`/vehicles/${id}`).then((res) => ({
@@ -134,12 +180,71 @@ export const api = {
     return fetchJson<any>("/vehicles", {
       method: "POST",
       body: JSON.stringify(mapped),
-    }).then((res) => ({
-      ...res,
-      location_id: res.branch_id,
-      state: res.status,
-    }));
+    }).then(mapVehicle);
   },
+  listVehicleLinks: (vehicleId: number) => fetchOptionalLinks(`/vehicles/${vehicleId}/links`),
+  createVehicleLink: async (vehicleId: number, payload: { title?: string; url: string }) => {
+    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/links`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const detail = await response.text();
+    if (response.status === 404 && detail.includes("Not Found")) {
+      throw new Error("El backend no tiene el endpoint de enlaces para vehiculos.");
+    }
+    if (!response.ok) {
+      throw buildError(response.status, response.statusText, detail);
+    }
+    return JSON.parse(detail) as VehicleLink;
+  },
+  deleteVehicleLink: async (vehicleId: number, linkId: number) => {
+    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/links/${linkId}`, {
+      method: "DELETE",
+    });
+    const detail = await response.text();
+    if (response.status === 404 && detail.includes("Not Found")) {
+      throw new Error("El backend no tiene el endpoint de enlaces para vehiculos.");
+    }
+    if (!response.ok) {
+      throw buildError(response.status, response.statusText, detail);
+    }
+  },
+  listVehicleFiles: (vehicleId: number, category?: VehicleFileCategory) => {
+    const qs = category ? `?category=${encodeURIComponent(category)}` : "";
+    return fetchJson<VehicleFile[]>(`/vehicles/${vehicleId}/files${qs}`);
+  },
+  uploadVehicleFile: async (
+    vehicleId: number,
+    payload: { file: File; category: VehicleFileCategory; notes?: string }
+  ) => {
+    const form = new FormData();
+    form.append("file", payload.file);
+    form.append("category", payload.category);
+    if (payload.notes) {
+      form.append("notes", payload.notes);
+    }
+    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/files`, {
+      method: "POST",
+      body: form,
+    });
+    const detail = await response.text();
+    if (!response.ok) {
+      throw buildError(response.status, response.statusText, detail);
+    }
+    return JSON.parse(detail) as VehicleFile;
+  },
+  deleteVehicleFile: async (vehicleId: number, fileId: number) => {
+    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/files/${fileId}`, {
+      method: "DELETE",
+    });
+    const detail = await response.text();
+    if (!response.ok) {
+      throw buildError(response.status, response.statusText, detail);
+    }
+  },
+  downloadVehicleFileUrl: (vehicleId: number, fileId: number) =>
+    `${API_URL}/vehicles/${vehicleId}/files/${fileId}/download`,
   exportCsv: (resource: "vehicles" | "expenses" | "sales") =>
     fetch(`${API_URL}/export/${resource}`),
 };
