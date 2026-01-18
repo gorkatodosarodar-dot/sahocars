@@ -16,7 +16,6 @@ class VehicleCreate(SQLModel):
     year: int
     km: int
     branch_id: int
-    purchase_price: float
     purchase_date: date
     version: Optional[str] = None
     color: Optional[str] = None
@@ -33,7 +32,6 @@ class VehicleRead(SQLModel):
     year: int
     km: int
     branch_id: int
-    purchase_price: float
     purchase_date: date
     status: VehicleStatus
     version: Optional[str] = None
@@ -56,7 +54,6 @@ class VehicleUpdate(SQLModel):
     year: Optional[int] = None
     km: Optional[int] = None
     branch_id: Optional[int] = None
-    purchase_price: Optional[float] = None
     purchase_date: Optional[date] = None
     version: Optional[str] = None
     color: Optional[str] = None

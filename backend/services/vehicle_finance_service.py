@@ -7,20 +7,24 @@ from sqlmodel import Session, select
 
 
 def get_vehicle_kpis(session: Session, vehicle_id: int):
-    from main import Expense, Vehicle
+    from main import Vehicle, VehicleExpense, VehicleExpenseCategory
 
     vehicle = session.get(Vehicle, vehicle_id)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
 
     expenses = session.exec(
-        select(Expense.amount).where(Expense.vehicle_id == vehicle_id)
+        select(VehicleExpense.amount, VehicleExpense.category).where(VehicleExpense.vehicle_id == vehicle_id)
     ).all()
-    total_expenses = float(sum(expenses)) if expenses else 0.0
-
-    total_cost = None
-    if vehicle.purchase_price is not None:
-        total_cost = float(vehicle.purchase_price) + total_expenses
+    purchase_total = 0.0
+    other_total = 0.0
+    for amount, category in expenses:
+        if category == VehicleExpenseCategory.PURCHASE:
+            purchase_total += float(amount)
+        else:
+            other_total += float(amount)
+    total_expenses = purchase_total + other_total
+    total_cost = total_expenses
 
     sale_price = float(vehicle.sale_price) if vehicle.sale_price is not None else None
 

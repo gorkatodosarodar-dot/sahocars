@@ -12,7 +12,6 @@ import {
   Text,
   TextInput,
   Title,
-  NumberInput,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
@@ -90,7 +89,6 @@ export default function VehiclesPage() {
           <Table.Td>{vehicle.model || "-"}</Table.Td>
           <Table.Td>{vehicle.state || "-"}</Table.Td>
           <Table.Td>{vehicle.location_id ? branches.find((b) => b.id === vehicle.location_id)?.name : "-"}</Table.Td>
-          <Table.Td>{formatCurrency(vehicle.purchase_price)}</Table.Td>
           <Table.Td>{formatCurrency(vehicle.sale_price)}</Table.Td>
           <Table.Td>{formatDate(vehicle.sale_date)}</Table.Td>
         </Table.Tr>
@@ -168,14 +166,6 @@ export default function VehiclesPage() {
           />
           <TextInput label="Marca" value={form.brand ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, brand: e.target.value }))} />
           <TextInput label="Modelo" value={form.model ?? ""} onChange={(e) => setForm((prev) => ({ ...prev, model: e.target.value }))} />
-          <NumberInput
-            label="Precio compra"
-            value={form.purchase_price ?? undefined}
-            onChange={(value) => setForm((prev) => ({ ...prev, purchase_price: typeof value === "number" ? value : null }))}
-            min={0}
-            step={100}
-            prefix="€ "
-          />
           <Select
             label="Sucursal"
             placeholder="Selecciona"
@@ -206,7 +196,6 @@ export default function VehiclesPage() {
               <Table.Th>Modelo</Table.Th>
               <Table.Th>Estado</Table.Th>
               <Table.Th>Sucursal</Table.Th>
-              <Table.Th>Compra</Table.Th>
               <Table.Th>Venta</Table.Th>
               <Table.Th>Fecha venta</Table.Th>
             </Table.Tr>

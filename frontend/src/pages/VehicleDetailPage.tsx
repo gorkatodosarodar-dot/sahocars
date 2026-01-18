@@ -21,6 +21,8 @@ import {
   VehicleKpis,
   VehicleEvent,
   VehicleEventType,
+  SaleCreateInput,
+  SaleDocument,
   formatCurrency,
   formatDate,
 } from "../lib/api";
@@ -81,8 +83,35 @@ export default function VehicleDetailPage() {
   const [savingVisit, setSavingVisit] = useState(false);
   const [visitToDelete, setVisitToDelete] = useState<VehicleVisit | null>(null);
   const [confirmVisitDeleteOpen, setConfirmVisitDeleteOpen] = useState(false);
+  const [vehicleKm, setVehicleKm] = useState<number | null>(null);
+  const [vehicleColor, setVehicleColor] = useState("");
+  const [vehicleLicensePlate, setVehicleLicensePlate] = useState("");
+  const [vehicleVin, setVehicleVin] = useState("");
+  const [vehicleBrand, setVehicleBrand] = useState("");
+  const [vehicleModel, setVehicleModel] = useState("");
+  const [vehicleVersion, setVehicleVersion] = useState("");
+  const [vehicleYear, setVehicleYear] = useState<number | null>(null);
+  const [vehicleNotes, setVehicleNotes] = useState("");
+  const [savingVehicleDetails, setSavingVehicleDetails] = useState(false);
+  const [desiredMarginPercent, setDesiredMarginPercent] = useState<number>(10);
+  const [salePrice, setSalePrice] = useState<number | null>(null);
+  const [saleDate, setSaleDate] = useState<Date | null>(null);
+  const [saleNotes, setSaleNotes] = useState("");
+  const [saleClientName, setSaleClientName] = useState("");
+  const [saleClientTaxId, setSaleClientTaxId] = useState("");
+  const [saleClientPhone, setSaleClientPhone] = useState("");
+  const [saleClientEmail, setSaleClientEmail] = useState("");
+  const [saleClientAddress, setSaleClientAddress] = useState("");
+  const [saleId, setSaleId] = useState<number | null>(null);
+  const [savingSale, setSavingSale] = useState(false);
+  const [saleDocuments, setSaleDocuments] = useState<SaleDocument[]>([]);
+  const [saleDocumentNotes, setSaleDocumentNotes] = useState("");
+  const [selectedSaleDocument, setSelectedSaleDocument] = useState<File | null>(null);
+  const [uploadingSaleDocument, setUploadingSaleDocument] = useState(false);
+  const [saleDocumentToDelete, setSaleDocumentToDelete] = useState<SaleDocument | null>(null);
+  const [confirmSaleDocumentDeleteOpen, setConfirmSaleDocumentDeleteOpen] = useState(false);
 
-  const tabKeys = ["resumen", "trabajo", "publicacion", "timeline"] as const;
+  const tabKeys = ["resumen", "trabajo", "publicacion", "venta", "timeline"] as const;
   type TabKey = (typeof tabKeys)[number];
   const normalizeTab = (value: string | null): TabKey => {
     if (value && (tabKeys as readonly string[]).includes(value)) {
@@ -93,6 +122,7 @@ export default function VehicleDetailPage() {
   const [activeTab, setActiveTab] = useState<TabKey>(() => normalizeTab(searchParams.get("tab")));
 
   const expenseCategoryLabels: Record<VehicleExpenseCategory, string> = {
+    PURCHASE: "Compra",
     MECHANICAL: "Mecanica",
     TIRES: "Neumaticos",
     TRANSPORT: "Transporte",
@@ -166,6 +196,19 @@ export default function VehicleDetailPage() {
       notifications.show({
         title: "Error",
         message: error instanceof Error ? error.message : "Error al cargar fotos",
+        color: "red",
+      });
+    }
+  };
+
+  const refreshSaleDocuments = async (vehicleId: number) => {
+    try {
+      const data = await api.listVehicleSaleDocuments(vehicleId);
+      setSaleDocuments(data);
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al cargar documentos de venta",
         color: "red",
       });
     }
@@ -262,7 +305,16 @@ export default function VehicleDetailPage() {
       try {
         setLoading(true);
         const vehicleId = Number(id);
-        const [vehicleData, branchesData, linksData, expensesData, visitsData, kpisData, timelineData] = await Promise.all([
+        const [
+          vehicleData,
+          branchesData,
+          linksData,
+          expensesData,
+          visitsData,
+          kpisData,
+          timelineData,
+          saleData,
+        ] = await Promise.all([
           api.getVehicle(vehicleId),
           api.getBranches(),
           api.listVehicleLinks(vehicleId),
@@ -270,6 +322,7 @@ export default function VehicleDetailPage() {
           api.listVehicleVisits(vehicleId),
           api.getVehicleKpis(vehicleId),
           api.getVehicleTimeline(vehicleId),
+          api.getVehicleSale(vehicleId).catch(() => null),
         ]);
         setVehicle(vehicleData);
         setBranches(branchesData);
@@ -279,7 +332,31 @@ export default function VehicleDetailPage() {
         setKpis(kpisData);
         setTimeline(timelineData);
         setStatusValue(vehicleData.state as VehicleStatus | null);
-        await Promise.all([refreshFiles(vehicleId), refreshPhotos(vehicleId)]);
+        setVehicleKm(vehicleData.km ?? null);
+        setVehicleColor(vehicleData.color ?? "");
+        setVehicleLicensePlate(vehicleData.license_plate ?? "");
+        setVehicleVin(vehicleData.vin ?? "");
+        setVehicleBrand(vehicleData.brand ?? "");
+        setVehicleModel(vehicleData.model ?? "");
+        setVehicleVersion(vehicleData.version ?? "");
+        setVehicleYear(vehicleData.year ?? null);
+        setVehicleNotes(vehicleData.notes ?? "");
+        setSaleId(saleData?.id ?? null);
+        setSalePrice(saleData?.sale_price ?? vehicleData.sale_price ?? null);
+        setSaleDate(
+          saleData?.sale_date
+            ? new Date(saleData.sale_date)
+            : vehicleData.sale_date
+            ? new Date(vehicleData.sale_date)
+            : null
+        );
+        setSaleNotes(saleData?.notes ?? "");
+        setSaleClientName(saleData?.client_name ?? "");
+        setSaleClientTaxId(saleData?.client_tax_id ?? "");
+        setSaleClientPhone(saleData?.client_phone ?? "");
+        setSaleClientEmail(saleData?.client_email ?? "");
+        setSaleClientAddress(saleData?.client_address ?? "");
+        await Promise.all([refreshFiles(vehicleId), refreshPhotos(vehicleId), refreshSaleDocuments(vehicleId)]);
       } catch (error) {
         notifications.show({
           title: "Error",
@@ -484,6 +561,163 @@ export default function VehicleDetailPage() {
     } finally {
       setConfirmFileDeleteOpen(false);
       setFileToDelete(null);
+    }
+  };
+
+  const handleSaveVehicleDetails = async () => {
+    if (!id) return;
+    try {
+      setSavingVehicleDetails(true);
+      const updated = await api.updateVehicle(Number(id), {
+        license_plate: vehicleLicensePlate.trim() || undefined,
+        vin: vehicleVin.trim() || undefined,
+        brand: vehicleBrand.trim() || undefined,
+        model: vehicleModel.trim() || undefined,
+        version: vehicleVersion.trim() || undefined,
+        year: vehicleYear ?? undefined,
+        km: vehicleKm ?? undefined,
+        color: vehicleColor.trim() || undefined,
+        notes: vehicleNotes.trim() || undefined,
+      });
+      setVehicle(updated);
+      setVehicleKm(updated.km ?? null);
+      setVehicleColor(updated.color ?? "");
+      setVehicleLicensePlate(updated.license_plate ?? "");
+      setVehicleVin(updated.vin ?? "");
+      setVehicleBrand(updated.brand ?? "");
+      setVehicleModel(updated.model ?? "");
+      setVehicleVersion(updated.version ?? "");
+      setVehicleYear(updated.year ?? null);
+      setVehicleNotes(updated.notes ?? "");
+      notifications.show({
+        title: "Exito",
+        message: "Datos actualizados correctamente",
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al actualizar datos",
+        color: "red",
+      });
+    } finally {
+      setSavingVehicleDetails(false);
+    }
+  };
+
+  const handleSaveSale = async () => {
+    if (!id || salePrice === null || !saleDate) {
+      notifications.show({
+        title: "Error",
+        message: "Completa fecha e importe de venta",
+        color: "red",
+      });
+      return;
+    }
+
+    const payload: SaleCreateInput = {
+      sale_price: salePrice,
+      sale_date: saleDate.toISOString().split("T")[0],
+      notes: saleNotes.trim() || undefined,
+      client_name: saleClientName.trim() || undefined,
+      client_tax_id: saleClientTaxId.trim() || undefined,
+      client_phone: saleClientPhone.trim() || undefined,
+      client_email: saleClientEmail.trim() || undefined,
+      client_address: saleClientAddress.trim() || undefined,
+    };
+
+    try {
+      setSavingSale(true);
+      const saleRecord = saleId
+        ? await api.updateVehicleSale(Number(id), payload)
+        : await api.registerVehicleSale(Number(id), payload);
+      if (saleRecord) {
+        setSaleId(saleRecord.id ?? null);
+        setSalePrice(saleRecord.sale_price);
+        setSaleDate(saleRecord.sale_date ? new Date(saleRecord.sale_date) : null);
+        setSaleNotes(saleRecord.notes || "");
+        setSaleClientName(saleRecord.client_name || "");
+        setSaleClientTaxId(saleRecord.client_tax_id || "");
+        setSaleClientPhone(saleRecord.client_phone || "");
+        setSaleClientEmail(saleRecord.client_email || "");
+        setSaleClientAddress(saleRecord.client_address || "");
+        if (id) {
+          const updatedVehicle = await api.getVehicle(Number(id));
+          setVehicle(updatedVehicle);
+        }
+      }
+      notifications.show({
+        title: "Exito",
+        message: "Venta guardada correctamente",
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al guardar venta",
+        color: "red",
+      });
+    } finally {
+      setSavingSale(false);
+    }
+  };
+
+  const handleUploadSaleDocument = async () => {
+    if (!id || !selectedSaleDocument) {
+      notifications.show({
+        title: "Error",
+        message: "Selecciona un documento",
+        color: "red",
+      });
+      return;
+    }
+    try {
+      setUploadingSaleDocument(true);
+      await api.uploadVehicleSaleDocument(Number(id), {
+        file: selectedSaleDocument,
+        notes: saleDocumentNotes.trim() || undefined,
+        saleId: saleId ?? undefined,
+      });
+      setSelectedSaleDocument(null);
+      setSaleDocumentNotes("");
+      notifications.show({
+        title: "Exito",
+        message: "Documento de venta subido correctamente",
+        color: "green",
+      });
+      await refreshSaleDocuments(Number(id));
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al subir documento de venta",
+        color: "red",
+      });
+    } finally {
+      setUploadingSaleDocument(false);
+    }
+  };
+
+  const handleDeleteSaleDocument = async () => {
+    if (!id || !saleDocumentToDelete?.id) {
+      return;
+    }
+    try {
+      await api.deleteVehicleSaleDocument(Number(id), saleDocumentToDelete.id);
+      notifications.show({
+        title: "Exito",
+        message: "Documento de venta eliminado",
+        color: "green",
+      });
+      await refreshSaleDocuments(Number(id));
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al eliminar documento de venta",
+        color: "red",
+      });
+    } finally {
+      setConfirmSaleDocumentDeleteOpen(false);
+      setSaleDocumentToDelete(null);
     }
   };
 
@@ -725,21 +959,37 @@ export default function VehicleDetailPage() {
     return `${(value * 100).toFixed(1)}%`;
   };
 
+  const purchaseTotal = expenses.reduce((sum, expense) => {
+    if (expense.category === "PURCHASE") {
+      return sum + Number(expense.amount);
+    }
+    return sum;
+  }, 0);
+  const otherExpensesTotal = expenses.reduce((sum, expense) => {
+    if (expense.category !== "PURCHASE") {
+      return sum + Number(expense.amount);
+    }
+    return sum;
+  }, 0);
+  const totalExpenses = purchaseTotal + otherExpensesTotal;
+  const desiredMarginRate = (desiredMarginPercent || 0) / 100;
+  const targetSalePrice = totalExpenses > 0 ? totalExpenses * (1 + desiredMarginRate) : null;
+
+  const salePriceValue = salePrice ?? vehicle?.sale_price ?? null;
+  const profitValue = salePriceValue !== null ? salePriceValue - totalExpenses : null;
+  const profitPercent = totalExpenses > 0 && profitValue !== null ? profitValue / totalExpenses : null;
+  const annualProfitPercent = (() => {
+    if (!profitPercent || !vehicle?.purchase_date || !vehicle?.sale_date) return null;
+    const purchase = new Date(vehicle.purchase_date);
+    const sale = new Date(vehicle.sale_date);
+    const days = (sale.getTime() - purchase.getTime()) / (1000 * 60 * 60 * 24);
+    if (days <= 0) return null;
+    return profitPercent * (365 / days);
+  })();
+
   return (
     <Stack gap="lg">
-      <Group justify="space-between" align="center">
-        <Group gap="sm">
-          <Title order={2}>Detalle del vehiculo</Title>
-          {vehicle?.state && (
-            <Badge color={statusColors[vehicle.state as VehicleStatus] || "gray"} variant="light">
-              {statusLabels[vehicle.state as VehicleStatus] || vehicle.state}
-            </Badge>
-          )}
-        </Group>
-        <Button variant="light" onClick={handleOpenStatusModal}>
-          Cambiar estado
-        </Button>
-      </Group>
+      <Title order={2}>Detalle del vehiculo</Title>
 
       <Button
         leftSection={<IconArrowLeft size={20} />}
@@ -758,166 +1008,107 @@ export default function VehicleDetailPage() {
           <Tabs.Tab value="resumen">Resumen</Tabs.Tab>
           <Tabs.Tab value="trabajo">Trabajo</Tabs.Tab>
           <Tabs.Tab value="publicacion">Publicacion</Tabs.Tab>
+          <Tabs.Tab value="venta">Venta</Tabs.Tab>
           <Tabs.Tab value="timeline">Timeline</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="resumen" pt="md">
           <Stack gap="lg">
-            <Grid>
-              <Grid.Col span={{ base: 12, md: 6 }}>
-                <Card withBorder shadow="xs" radius="md">
-                  <Title order={3} mb="md">
-                    Informacion general
-                  </Title>
-                  <Stack gap="sm">
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Matricula
-                      </Text>
-                      <Text fw={500}>{vehicle.license_plate || "-"}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        VIN
-                      </Text>
-                      <Text fw={500}>{vehicle.vin || "-"}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Marca
-                      </Text>
-                      <Text fw={500}>{vehicle.brand || "-"}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Modelo
-                      </Text>
-                      <Text fw={500}>{vehicle.model || "-"}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Version
-                      </Text>
-                      <Text fw={500}>{vehicle.version || "-"}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Ano
-                      </Text>
-                      <Text fw={500}>{vehicle.year || "-"}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Sucursal
-                      </Text>
-                      <Text fw={500}>{branchName}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Estado
-                      </Text>
-                      <Text fw={500}>{vehicle.state || "-"}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Notas
-                      </Text>
-                      <Text fw={500} size="sm">
-                        {vehicle.notes || "-"}
-                      </Text>
-                    </div>
-                  </Stack>
-                </Card>
-              </Grid.Col>
-
-              <Grid.Col span={{ base: 12, md: 6 }}>
-                <Card withBorder shadow="xs" radius="md">
-                  <Title order={3} mb="md">
-                    Especificaciones
-                  </Title>
-                  <Stack gap="sm">
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Color
-                      </Text>
-                      <Text fw={500}>{vehicle.color || "-"}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Kilometros
-                      </Text>
-                      <Text fw={500}>{vehicle.km ? vehicle.km.toLocaleString() : "-"}</Text>
-                    </div>
-                  </Stack>
-                </Card>
-              </Grid.Col>
-
-              <Grid.Col span={{ base: 12, md: 6 }}>
-                <Card withBorder shadow="xs" radius="md">
-                  <Title order={3} mb="md">
-                    Informacion financiera
-                  </Title>
-                  <Stack gap="sm">
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Precio de compra
-                      </Text>
-                      <Text fw={500}>{formatCurrency(vehicle.purchase_price)}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Fecha de compra
-                      </Text>
-                      <Text fw={500}>{formatDate(vehicle.purchase_date)}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Precio de venta
-                      </Text>
-                      <Text fw={500}>{formatCurrency(vehicle.sale_price)}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Fecha de venta
-                      </Text>
-                      <Text fw={500}>{formatDate(vehicle.sale_date)}</Text>
-                    </div>
-                  </Stack>
-                </Card>
-              </Grid.Col>
-
-              <Grid.Col span={{ base: 12, md: 6 }}>
-                <Card withBorder shadow="xs" radius="md">
-                  <Title order={3} mb="md">
-                    Metadatos
-                  </Title>
-                  <Stack gap="sm">
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        ID
-                      </Text>
-                      <Text fw={500}>{vehicle.id}</Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Creado
-                      </Text>
-                      <Text fw={500} size="sm">
-                        {formatDate(vehicle.created_at)}
-                      </Text>
-                    </div>
-                    <div>
-                      <Text size="sm" c="dimmed">
-                        Actualizado
-                      </Text>
-                      <Text fw={500} size="sm">
-                        {formatDate(vehicle.updated_at)}
-                      </Text>
-                    </div>
-                  </Stack>
-                </Card>
-              </Grid.Col>
-            </Grid>
+            <Card withBorder shadow="xs" radius="md">
+              <Group justify="space-between" align="center">
+                <Group gap="sm">
+                  <Text fw={500}>Estado</Text>
+                  {vehicle?.state && (
+                    <Badge color={statusColors[vehicle.state as VehicleStatus] || "gray"} variant="light">
+                      {statusLabels[vehicle.state as VehicleStatus] || vehicle.state}
+                    </Badge>
+                  )}
+                </Group>
+                <Button variant="light" onClick={handleOpenStatusModal}>
+                  Cambiar estado
+                </Button>
+              </Group>
+            </Card>
+            <Card withBorder shadow="xs" radius="md">
+              <Title order={3} mb="md">
+                Informacion general
+              </Title>
+              <Stack gap="sm">
+                <Group grow>
+                  <TextInput
+                    label="Matricula"
+                    value={vehicleLicensePlate}
+                    onChange={(e) => setVehicleLicensePlate(e.currentTarget.value)}
+                  />
+                  <TextInput
+                    label="Bastidor (VIN)"
+                    value={vehicleVin}
+                    onChange={(e) => setVehicleVin(e.currentTarget.value)}
+                  />
+                </Group>
+                <Group grow>
+                  <TextInput
+                    label="Marca"
+                    value={vehicleBrand}
+                    onChange={(e) => setVehicleBrand(e.currentTarget.value)}
+                  />
+                  <TextInput
+                    label="Modelo"
+                    value={vehicleModel}
+                    onChange={(e) => setVehicleModel(e.currentTarget.value)}
+                  />
+                  <TextInput
+                    label="Version"
+                    value={vehicleVersion}
+                    onChange={(e) => setVehicleVersion(e.currentTarget.value)}
+                  />
+                </Group>
+                <Group grow>
+                  <NumberInput
+                    label="Ano"
+                    value={vehicleYear ?? undefined}
+                    onChange={(value) => setVehicleYear(typeof value === "number" ? value : null)}
+                    min={0}
+                    decimalScale={0}
+                    decimalSeparator=","
+                    thousandSeparator="."
+                  />
+                  <TextInput
+                    label="Color"
+                    value={vehicleColor}
+                    onChange={(e) => setVehicleColor(e.currentTarget.value)}
+                  />
+                  <NumberInput
+                    label="Kilometros"
+                    value={vehicleKm ?? undefined}
+                    onChange={(value) => setVehicleKm(typeof value === "number" ? value : null)}
+                    min={0}
+                    decimalScale={0}
+                    decimalSeparator=","
+                    thousandSeparator="."
+                  />
+                </Group>
+                <Group grow align="flex-start">
+                  <TextInput label="Ubicacion" value={branchName} readOnly />
+                  <TextInput
+                    label="Notas"
+                    value={vehicleNotes}
+                    onChange={(e) => setVehicleNotes(e.currentTarget.value)}
+                  />
+                </Group>
+                <Group grow>
+                  <TextInput label="Fecha de compra" value={formatDate(vehicle.purchase_date)} readOnly />
+                  <TextInput label="ID" value={String(vehicle.id ?? "")} readOnly />
+                  <TextInput label="Creado" value={formatDate(vehicle.created_at)} readOnly />
+                  <TextInput label="Actualizado" value={formatDate(vehicle.updated_at)} readOnly />
+                </Group>
+                <Group justify="flex-end">
+                  <Button variant="light" onClick={handleSaveVehicleDetails} loading={savingVehicleDetails}>
+                    Guardar cambios
+                  </Button>
+                </Group>
+              </Stack>
+            </Card>
 
             <Card withBorder shadow="xs" radius="md">
               <Title order={3} mb="md">
@@ -970,6 +1161,72 @@ export default function VehicleDetailPage() {
                 </Group>
               </Stack>
             </Card>
+
+            <Card withBorder shadow="xs" radius="md">
+              <Title order={3} mb="md">
+                Calculo de venta
+              </Title>
+              <Stack gap="xs">
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Coste de compra
+                  </Text>
+                  <Text fw={500}>{formatCurrency(purchaseTotal)}</Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Otros gastos
+                  </Text>
+                  <Text fw={500}>{formatCurrency(otherExpensesTotal)}</Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Total gastos
+                  </Text>
+                  <Text fw={500}>{formatCurrency(totalExpenses)}</Text>
+                </Group>
+                <Group justify="space-between" align="center">
+                  <Text size="sm" c="dimmed">
+                    Beneficio deseado (%)
+                  </Text>
+                  <NumberInput
+                    value={desiredMarginPercent}
+                    onChange={(value) => setDesiredMarginPercent(typeof value === "number" ? value : 0)}
+                    min={0}
+                    max={100}
+                    step={1}
+                    decimalScale={2}
+                    decimalSeparator=","
+                    thousandSeparator="."
+                    w={120}
+                  />
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Precio objetivo
+                  </Text>
+                  <Text fw={500}>{targetSalePrice !== null ? formatCurrency(targetSalePrice) : "-"}</Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Beneficio real
+                  </Text>
+                  <Text fw={500}>{profitValue !== null ? formatCurrency(profitValue) : "-"}</Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    % beneficio real
+                  </Text>
+                  <Text fw={500}>{formatPercent(profitPercent)}</Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    % beneficio anual
+                  </Text>
+                  <Text fw={500}>{formatPercent(annualProfitPercent)}</Text>
+                </Group>
+              </Stack>
+            </Card>
           </Stack>
         </Tabs.Panel>
 
@@ -995,6 +1252,7 @@ export default function VehicleDetailPage() {
                       <Table.Th>Categoria</Table.Th>
                       <Table.Th>Proveedor</Table.Th>
                       <Table.Th>Importe</Table.Th>
+                      <Table.Th>Notas</Table.Th>
                       <Table.Th w={120} style={{ textAlign: "center" }}>
                         Acciones
                       </Table.Th>
@@ -1009,6 +1267,7 @@ export default function VehicleDetailPage() {
                         <Table.Td>
                           {formatCurrency(Number(expense.amount))} {expense.currency}
                         </Table.Td>
+                        <Table.Td>{expense.notes || "-"}</Table.Td>
                         <Table.Td style={{ textAlign: "center" }}>
                           <Group gap={0} justify="center">
                             <ActionIcon
@@ -1342,6 +1601,148 @@ export default function VehicleDetailPage() {
           </Stack>
         </Tabs.Panel>
 
+        <Tabs.Panel value="venta" pt="md">
+          <Stack gap="lg">
+            <Card withBorder shadow="xs" radius="md">
+              <Title order={3} mb="md">
+                Datos de venta
+              </Title>
+              <Stack gap="sm">
+                <DateInput
+                  label="Fecha de venta"
+                  value={saleDate}
+                  onChange={(value) => setSaleDate(value)}
+                  required
+                />
+                <NumberInput
+                  label="Precio de venta"
+                  value={salePrice ?? undefined}
+                  onChange={(value) => setSalePrice(typeof value === "number" ? value : null)}
+                  min={0}
+                  decimalScale={2}
+                  decimalSeparator=","
+                  thousandSeparator="."
+                  required
+                />
+                <TextInput
+                  label="Nombre comprador"
+                  value={saleClientName}
+                  onChange={(e) => setSaleClientName(e.currentTarget.value)}
+                />
+                <TextInput
+                  label="DNI/NIF comprador"
+                  value={saleClientTaxId}
+                  onChange={(e) => setSaleClientTaxId(e.currentTarget.value)}
+                />
+                <TextInput
+                  label="Telefono comprador"
+                  value={saleClientPhone}
+                  onChange={(e) => setSaleClientPhone(e.currentTarget.value)}
+                />
+                <TextInput
+                  label="Email comprador"
+                  value={saleClientEmail}
+                  onChange={(e) => setSaleClientEmail(e.currentTarget.value)}
+                />
+                <TextInput
+                  label="Direccion comprador"
+                  value={saleClientAddress}
+                  onChange={(e) => setSaleClientAddress(e.currentTarget.value)}
+                />
+                <TextInput
+                  label="Notas de venta"
+                  value={saleNotes}
+                  onChange={(e) => setSaleNotes(e.currentTarget.value)}
+                />
+                <Group justify="flex-end">
+                  <Button onClick={handleSaveSale} loading={savingSale}>
+                    Guardar venta
+                  </Button>
+                </Group>
+              </Stack>
+            </Card>
+
+            <Card withBorder shadow="xs" radius="md">
+              <Title order={3} mb="md">
+                Documentos de venta
+              </Title>
+              <Stack gap="sm" mb="lg">
+                <TextInput
+                  label="Notas"
+                  placeholder="Notas opcionales"
+                  value={saleDocumentNotes}
+                  onChange={(e) => setSaleDocumentNotes(e.currentTarget.value)}
+                />
+                <input
+                  type="file"
+                  onChange={(e) =>
+                    setSelectedSaleDocument(e.currentTarget.files ? e.currentTarget.files[0] : null)
+                  }
+                />
+                <Button onClick={handleUploadSaleDocument} loading={uploadingSaleDocument} w="fit-content">
+                  Subir documento
+                </Button>
+              </Stack>
+
+              {saleDocuments.length === 0 ? (
+                <Text c="dimmed" size="sm">
+                  Sin documentos de venta
+                </Text>
+              ) : (
+                <Table striped>
+                  <Table.Thead>
+                    <Table.Tr>
+                      <Table.Th>Nombre</Table.Th>
+                      <Table.Th>Tamano</Table.Th>
+                      <Table.Th>Fecha</Table.Th>
+                      <Table.Th>Notas</Table.Th>
+                      <Table.Th w={120} style={{ textAlign: "center" }}>
+                        Acciones
+                      </Table.Th>
+                    </Table.Tr>
+                  </Table.Thead>
+                  <Table.Tbody>
+                    {saleDocuments.map((doc) => (
+                      <Table.Tr key={doc.id}>
+                        <Table.Td>{doc.original_name}</Table.Td>
+                        <Table.Td>{formatFileSize(doc.size_bytes)}</Table.Td>
+                        <Table.Td>{formatDate(doc.created_at)}</Table.Td>
+                        <Table.Td>{doc.notes || "-"}</Table.Td>
+                        <Table.Td style={{ textAlign: "center" }}>
+                          <Group gap={0} justify="center">
+                            <ActionIcon
+                              variant="light"
+                              color="blue"
+                              component="a"
+                              href={api.downloadVehicleSaleDocumentUrl(Number(id), doc.id || 0)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Abrir o descargar"
+                            >
+                              <IconExternalLink size={18} />
+                            </ActionIcon>
+                            <ActionIcon
+                              variant="light"
+                              color="red"
+                              onClick={() => {
+                                setSaleDocumentToDelete(doc);
+                                setConfirmSaleDocumentDeleteOpen(true);
+                              }}
+                              title="Eliminar documento"
+                            >
+                              <IconTrash size={18} />
+                            </ActionIcon>
+                          </Group>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              )}
+            </Card>
+          </Stack>
+        </Tabs.Panel>
+
         <Tabs.Panel value="timeline" pt="md">
           <Stack gap="lg">
             <Card withBorder shadow="xs" radius="md">
@@ -1523,6 +1924,8 @@ export default function VehicleDetailPage() {
             onChange={(value) => setExpenseAmount(typeof value === "number" ? value : null)}
             min={0}
             decimalScale={2}
+            decimalSeparator=","
+            thousandSeparator="."
             required
           />
           <TextInput
@@ -1636,6 +2039,25 @@ export default function VehicleDetailPage() {
               Cancelar
             </Button>
             <Button color="red" onClick={handleDeleteFile}>
+              Eliminar
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={confirmSaleDocumentDeleteOpen}
+        onClose={() => setConfirmSaleDocumentDeleteOpen(false)}
+        title="Confirmar eliminacion"
+        centered
+      >
+        <Stack gap="md">
+          <Text>Estas seguro de que deseas eliminar este documento de venta?</Text>
+          <Group justify="flex-end">
+            <Button variant="light" onClick={() => setConfirmSaleDocumentDeleteOpen(false)}>
+              Cancelar
+            </Button>
+            <Button color="red" onClick={handleDeleteSaleDocument}>
               Eliminar
             </Button>
           </Group>

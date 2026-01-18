@@ -60,7 +60,6 @@ class Vehicle(SQLModel, table=True):
     color: Optional[str] = None
     branch_id: Optional[int] = Field(default=None, foreign_key="branch.id")
     status: Optional[VehicleStatus] = Field(default=VehicleStatus.IN_STOCK)
-    purchase_price: Optional[float] = None
     sale_price: Optional[float] = None
     purchase_date: Optional[date] = None
     sale_date: Optional[date] = None
@@ -80,6 +79,7 @@ class Expense(SQLModel, table=True):
 
 
 class VehicleExpenseCategory(str, Enum):
+    PURCHASE = "PURCHASE"
     MECHANICAL = "MECHANICAL"
     TIRES = "TIRES"
     TRANSPORT = "TRANSPORT"
@@ -113,6 +113,9 @@ class Sale(SQLModel, table=True):
     notes: Optional[str] = None
     client_name: Optional[str] = None
     client_tax_id: Optional[str] = None
+    client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    client_address: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -133,6 +136,18 @@ class Photo(SQLModel, table=True):
     stored_path: str
     display_order: Optional[int] = None
     uploaded_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class SaleDocument(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    vehicle_id: int = Field(foreign_key="vehicle.id")
+    sale_id: Optional[int] = Field(default=None, foreign_key="sale.id")
+    original_name: str
+    stored_name: str
+    mime_type: str
+    size_bytes: int
+    notes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class VehicleFile(SQLModel, table=True):
@@ -247,7 +262,6 @@ class VehicleCreate(SQLModel):
     year: int
     km: int
     branch_id: int
-    purchase_price: float
     purchase_date: str  # Acepta string en formato ISO
     version: Optional[str] = None
     color: Optional[str] = None
@@ -294,7 +308,7 @@ class VehicleExpenseCreate(SQLModel):
 class VehicleExpenseUpdate(SQLModel):
     amount: Optional[Decimal] = None
     currency: Optional[str] = None
-    date: Optional[date] = None
+    date: Optional[str] = None
     category: Optional[VehicleExpenseCategory] = None
     vendor: Optional[str] = None
     invoice_ref: Optional[str] = None
@@ -328,6 +342,20 @@ class SaleCreate(SQLModel):
     notes: Optional[str] = None
     client_name: Optional[str] = None
     client_tax_id: Optional[str] = None
+    client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    client_address: Optional[str] = None
+
+
+class SaleUpdate(SQLModel):
+    sale_price: Optional[float] = None
+    sale_date: Optional[date] = None
+    notes: Optional[str] = None
+    client_name: Optional[str] = None
+    client_tax_id: Optional[str] = None
+    client_phone: Optional[str] = None
+    client_email: Optional[str] = None
+    client_address: Optional[str] = None
 
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if DATABASE_URL.startswith("sqlite") else create_engine(DATABASE_URL)
@@ -514,6 +542,14 @@ def delete_vehicle_expense(
     return {"status": "ok"}
 
 
+@app.get("/vehicles/{vehicle_id}/sale", response_model=Sale)
+def get_sale(vehicle_id: int, session: Session = Depends(get_session)):
+    sale = session.exec(select(Sale).where(Sale.vehicle_id == vehicle_id)).first()
+    if not sale:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    return sale
+
+
 @app.post("/vehicles/{vehicle_id}/sale", response_model=Sale)
 def register_sale(vehicle_id: int, sale: SaleCreate, session: Session = Depends(get_session)):
     vehicle = session.get(Vehicle, vehicle_id)
@@ -526,6 +562,28 @@ def register_sale(vehicle_id: int, sale: SaleCreate, session: Session = Depends(
     vehicle.updated_at = datetime.utcnow()
     session.add(sale_record)
     session.add(vehicle)
+    session.commit()
+    session.refresh(sale_record)
+    return sale_record
+
+
+@app.patch("/vehicles/{vehicle_id}/sale", response_model=Sale)
+def update_sale(vehicle_id: int, payload: SaleUpdate, session: Session = Depends(get_session)):
+    sale_record = session.exec(select(Sale).where(Sale.vehicle_id == vehicle_id)).first()
+    if not sale_record:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(sale_record, key, value)
+    session.add(sale_record)
+    if update_data.get("sale_price") is not None or update_data.get("sale_date") is not None:
+        vehicle = session.get(Vehicle, vehicle_id)
+        if vehicle:
+            vehicle.sale_price = sale_record.sale_price
+            vehicle.sale_date = sale_record.sale_date
+            vehicle.status = VehicleStatus.SOLD
+            vehicle.updated_at = datetime.utcnow()
+            session.add(vehicle)
     session.commit()
     session.refresh(sale_record)
     return sale_record
@@ -732,6 +790,94 @@ def delete_vehicle_file(
     return {"status": "ok"}
 
 
+@app.get("/vehicles/{vehicle_id}/sale-documents", response_model=List[SaleDocument])
+def list_sale_documents(vehicle_id: int, session: Session = Depends(get_session)):
+    ensure_vehicle_exists(vehicle_id, session)
+    return session.exec(
+        select(SaleDocument)
+        .where(SaleDocument.vehicle_id == vehicle_id)
+        .order_by(SaleDocument.created_at.desc())
+    ).all()
+
+
+@app.post("/vehicles/{vehicle_id}/sale-documents", response_model=SaleDocument)
+def upload_sale_document(
+    vehicle_id: int,
+    file: UploadFile = File(...),
+    notes: Optional[str] = Form(None),
+    sale_id: Optional[int] = Form(None),
+    session: Session = Depends(get_session),
+):
+    ensure_vehicle_exists(vehicle_id, session)
+    sale = None
+    if sale_id is not None:
+        sale = session.get(Sale, sale_id)
+        if not sale or sale.vehicle_id != vehicle_id:
+            raise HTTPException(status_code=404, detail="Venta no encontrada")
+
+    original_name = os.path.basename(file.filename or "archivo")
+    extension = safe_extension(original_name)
+    storage_dir = STORAGE_ROOT / "vehicles" / str(vehicle_id) / "sale-documents"
+    storage_dir.mkdir(parents=True, exist_ok=True)
+    stored_name = f"{uuid4().hex}{extension}"
+    destination = storage_dir / stored_name
+
+    try:
+        size_bytes = write_upload_file(destination, file)
+    except HTTPException:
+        if destination.exists():
+            destination.unlink()
+        raise
+    finally:
+        file.file.close()
+
+    record = SaleDocument(
+        vehicle_id=vehicle_id,
+        sale_id=sale.id if sale else None,
+        original_name=original_name,
+        stored_name=stored_name,
+        mime_type=file.content_type or "application/octet-stream",
+        size_bytes=size_bytes,
+        notes=notes,
+    )
+    session.add(record)
+    session.commit()
+    session.refresh(record)
+    return record
+
+
+@app.get("/vehicles/{vehicle_id}/sale-documents/{document_id}/download")
+def download_sale_document(
+    vehicle_id: int,
+    document_id: int,
+    session: Session = Depends(get_session),
+):
+    record = session.get(SaleDocument, document_id)
+    if not record or record.vehicle_id != vehicle_id:
+        raise HTTPException(status_code=404, detail="Documento de venta no encontrado")
+    file_path = STORAGE_ROOT / "vehicles" / str(vehicle_id) / "sale-documents" / record.stored_name
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Documento de venta no encontrado")
+    return FileResponse(file_path, filename=record.original_name)
+
+
+@app.delete("/vehicles/{vehicle_id}/sale-documents/{document_id}")
+def delete_sale_document(
+    vehicle_id: int,
+    document_id: int,
+    session: Session = Depends(get_session),
+):
+    record = session.get(SaleDocument, document_id)
+    if not record or record.vehicle_id != vehicle_id:
+        raise HTTPException(status_code=404, detail="Documento de venta no encontrado")
+    file_path = STORAGE_ROOT / "vehicles" / str(vehicle_id) / "sale-documents" / record.stored_name
+    if file_path.exists():
+        file_path.unlink()
+    session.delete(record)
+    session.commit()
+    return {"status": "ok"}
+
+
 @app.get("/vehicles/{vehicle_id}/links", response_model=List[VehicleLink])
 def list_vehicle_links(vehicle_id: int, session: Session = Depends(get_session)):
     return session.exec(
@@ -874,7 +1020,6 @@ def export_vehicles(session: Session = Depends(get_session)):
         "color",
         "branch_id",
         "status",
-        "purchase_price",
         "purchase_date",
         "sale_price",
         "sale_date",
@@ -893,7 +1038,6 @@ def export_vehicles(session: Session = Depends(get_session)):
             v.color or "",
             str(v.branch_id or ""),
             v.status or "",
-            str(v.purchase_price or ""),
             v.purchase_date.isoformat() if v.purchase_date else "",
             str(v.sale_price or ""),
             v.sale_date.isoformat() if v.sale_date else "",
@@ -923,7 +1067,18 @@ def export_expenses(session: Session = Depends(get_session)):
 @app.get("/export/sales")
 def export_sales(session: Session = Depends(get_session)):
     sales = session.exec(select(Sale).order_by(Sale.sale_date)).all()
-    headers = ["id", "vehicle_id", "sale_price", "sale_date", "client_name", "client_tax_id", "notes"]
+    headers = [
+        "id",
+        "vehicle_id",
+        "sale_price",
+        "sale_date",
+        "client_name",
+        "client_tax_id",
+        "client_phone",
+        "client_email",
+        "client_address",
+        "notes",
+    ]
     lines = [",".join(headers)]
     for sale in sales:
         values = [
@@ -933,6 +1088,9 @@ def export_sales(session: Session = Depends(get_session)):
             sale.sale_date.isoformat(),
             (sale.client_name or "").replace(",", " "),
             sale.client_tax_id or "",
+            sale.client_phone or "",
+            sale.client_email or "",
+            (sale.client_address or "").replace(",", " "),
             (sale.notes or "").replace(",", " "),
         ]
         lines.append(",".join(values))

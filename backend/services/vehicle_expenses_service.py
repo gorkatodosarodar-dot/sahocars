@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date as date_type, datetime
 from decimal import Decimal
 from fastapi import HTTPException
 from sqlmodel import Session, select
@@ -77,6 +77,11 @@ def update_expense(session: Session, vehicle_id: int, expense_id: int, payload):
             raise HTTPException(status_code=404, detail="Archivo no encontrado")
 
     update_data = payload.model_dump(exclude_unset=True)
+    if "date" in update_data and isinstance(update_data["date"], str):
+        try:
+            update_data["date"] = date_type.fromisoformat(update_data["date"])
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="Fecha invalida") from exc
     for key, value in update_data.items():
         setattr(expense, key, value)
     expense.updated_at = datetime.utcnow()

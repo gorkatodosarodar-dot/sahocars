@@ -29,7 +29,6 @@ class Vehicle(SQLModel, table=True):
     color: Optional[str] = None
     branch_id: int = Field(foreign_key="branch.id")
     status: VehicleStatus = Field(default=VehicleStatus.PENDING)
-    purchase_price: float
     purchase_date: date
     sale_price: Optional[float] = None
     sale_date: Optional[date] = None

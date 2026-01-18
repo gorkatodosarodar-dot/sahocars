@@ -14,7 +14,6 @@ export type Vehicle = {
   color?: string | null;
   location_id?: number | null;
   state?: string | null;
-  purchase_price?: number | null;
   sale_price?: number | null;
   purchase_date?: string | null;
   sale_date?: string | null;
@@ -90,6 +89,7 @@ export type VehicleKpis = {
 };
 
 export type VehicleExpenseCategory =
+  | "PURCHASE"
   | "MECHANICAL"
   | "TIRES"
   | "TRANSPORT"
@@ -165,6 +165,32 @@ export type Sale = {
   notes?: string | null;
   client_name?: string | null;
   client_tax_id?: string | null;
+  client_phone?: string | null;
+  client_email?: string | null;
+  client_address?: string | null;
+};
+
+export type SaleCreateInput = {
+  sale_price: number;
+  sale_date: string;
+  notes?: string | null;
+  client_name?: string | null;
+  client_tax_id?: string | null;
+  client_phone?: string | null;
+  client_email?: string | null;
+  client_address?: string | null;
+};
+
+export type SaleDocument = {
+  id?: number;
+  vehicle_id: number;
+  sale_id?: number | null;
+  original_name: string;
+  stored_name: string;
+  mime_type: string;
+  size_bytes: number;
+  notes?: string | null;
+  created_at?: string | null;
 };
 
 export type DashboardSummary = {
@@ -262,7 +288,6 @@ export const api = {
       color: payload.color?.trim() || null,
       branch_id: payload.location_id,
       status: payload.state || "pendiente recepcion",
-      purchase_price: payload.purchase_price || 0,
       purchase_date: payload.purchase_date || today,
       sale_price: payload.sale_price || null,
       sale_date: payload.sale_date || null,
@@ -273,6 +298,28 @@ export const api = {
     
     return fetchJson<any>("/vehicles", {
       method: "POST",
+      body: JSON.stringify(mapped),
+    }).then(mapVehicle);
+  },
+  updateVehicle: (vehicleId: number, payload: Partial<Vehicle>) => {
+    const mapped = {
+      vin: payload.vin,
+      license_plate: payload.license_plate,
+      brand: payload.brand,
+      model: payload.model,
+      year: payload.year,
+      km: payload.km,
+      version: payload.version,
+      color: payload.color,
+      branch_id: payload.location_id,
+      status: payload.state,
+      purchase_date: payload.purchase_date,
+      sale_price: payload.sale_price,
+      sale_date: payload.sale_date,
+      notes: payload.notes,
+    };
+    return fetchJson<Vehicle>(`/vehicles/${vehicleId}`, {
+      method: "PATCH",
       body: JSON.stringify(mapped),
     }).then(mapVehicle);
   },
@@ -348,6 +395,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }).then(mapVehicle),
+  registerVehicleSale: (vehicleId: number, payload: SaleCreateInput) =>
+    fetchJson<Sale>(`/vehicles/${vehicleId}/sale`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getVehicleSale: (vehicleId: number) =>
+    fetchJson<Sale>(`/vehicles/${vehicleId}/sale`),
+  updateVehicleSale: (vehicleId: number, payload: Partial<SaleCreateInput>) =>
+    fetchJson<Sale>(`/vehicles/${vehicleId}/sale`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   getVehicleTimeline: (vehicleId: number, params?: { limit?: number; types?: VehicleEventType[] }) => {
     const search = new URLSearchParams();
     if (params?.limit) search.append("limit", String(params.limit));
@@ -390,6 +449,41 @@ export const api = {
   },
   downloadVehicleFileUrl: (vehicleId: number, fileId: number) =>
     `${API_URL}/vehicles/${vehicleId}/files/${fileId}/download`,
+  listVehicleSaleDocuments: (vehicleId: number) =>
+    fetchJson<SaleDocument[]>(`/vehicles/${vehicleId}/sale-documents`),
+  uploadVehicleSaleDocument: async (
+    vehicleId: number,
+    payload: { file: File; notes?: string; saleId?: number }
+  ) => {
+    const form = new FormData();
+    form.append("file", payload.file);
+    if (payload.notes) {
+      form.append("notes", payload.notes);
+    }
+    if (payload.saleId) {
+      form.append("sale_id", String(payload.saleId));
+    }
+    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/sale-documents`, {
+      method: "POST",
+      body: form,
+    });
+    const detail = await response.text();
+    if (!response.ok) {
+      throw buildError(response.status, response.statusText, detail);
+    }
+    return JSON.parse(detail) as SaleDocument;
+  },
+  deleteVehicleSaleDocument: async (vehicleId: number, documentId: number) => {
+    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/sale-documents/${documentId}`, {
+      method: "DELETE",
+    });
+    const detail = await response.text();
+    if (!response.ok) {
+      throw buildError(response.status, response.statusText, detail);
+    }
+  },
+  downloadVehicleSaleDocumentUrl: (vehicleId: number, documentId: number) =>
+    `${API_URL}/vehicles/${vehicleId}/sale-documents/${documentId}/download`,
   exportCsv: (resource: "vehicles" | "expenses" | "sales") =>
     fetch(`${API_URL}/export/${resource}`),
 };
