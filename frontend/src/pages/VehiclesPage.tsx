@@ -16,7 +16,7 @@ import {
 import { DateInput } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
 
-const INITIAL_FORM: Vehicle = { state: "pendiente recepcion" };
+const INITIAL_FORM: Vehicle = { license_plate: "", state: "pendiente recepcion" };
 
 export default function VehiclesPage() {
   const navigate = useNavigate();
@@ -55,7 +55,7 @@ export default function VehiclesPage() {
       
       // Actualizar la lista con el nuevo vehículo (sin duplicados)
       setVehicles((prev) => {
-        const exists = prev.some((v) => v.id === newVehicle.id);
+        const exists = prev.some((v) => v.license_plate === newVehicle.license_plate);
         if (exists) {
           return prev;
         }
@@ -79,9 +79,9 @@ export default function VehiclesPage() {
     () =>
       vehicles.map((vehicle) => (
         <Table.Tr
-          key={vehicle.id}
+          key={vehicle.license_plate}
           style={{ cursor: "pointer" }}
-          onClick={() => vehicle.id && navigate(`/vehiculos/${vehicle.id}`)}
+          onClick={() => navigate(`/vehiculos/${encodeURIComponent(vehicle.license_plate)}`)}
           className="vehicles-table-row"
         >
           <Table.Td>{vehicle.license_plate || "-"}</Table.Td>

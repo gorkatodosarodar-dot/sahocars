@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 
-def emit_event(session: Session, vehicle_id: int, event_type, payload: dict, actor: Optional[str] = None):
+def emit_event(session: Session, vehicle_id: str, event_type, payload: dict, actor: Optional[str] = None):
     from main import VehicleEvent
 
     event = VehicleEvent(
@@ -21,7 +21,7 @@ def emit_event(session: Session, vehicle_id: int, event_type, payload: dict, act
     return event
 
 
-def list_timeline(session: Session, vehicle_id: int, limit: int = 50, types: list | None = None):
+def list_timeline(session: Session, vehicle_id: str, limit: int = 50, types: list | None = None):
     from main import Vehicle, VehicleEvent
 
     if not session.get(Vehicle, vehicle_id):

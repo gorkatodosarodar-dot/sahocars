@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 
-def list_expenses(session: Session, vehicle_id: int):
+def list_expenses(session: Session, vehicle_id: str):
     from main import Vehicle, VehicleExpense
 
     if not session.get(Vehicle, vehicle_id):
@@ -19,7 +19,7 @@ def list_expenses(session: Session, vehicle_id: int):
     return session.exec(query).all()
 
 
-def create_expense(session: Session, vehicle_id: int, payload):
+def create_expense(session: Session, vehicle_id: str, payload):
     from main import Vehicle, VehicleEventType, VehicleExpense, VehicleFile
     from services.vehicle_events_service import emit_event
 
@@ -61,7 +61,7 @@ def create_expense(session: Session, vehicle_id: int, payload):
     return expense
 
 
-def update_expense(session: Session, vehicle_id: int, expense_id: int, payload):
+def update_expense(session: Session, vehicle_id: str, expense_id: int, payload):
     from main import VehicleEventType, VehicleExpense, VehicleFile
     from services.vehicle_events_service import emit_event
 
@@ -102,7 +102,7 @@ def update_expense(session: Session, vehicle_id: int, expense_id: int, payload):
     return expense
 
 
-def delete_expense(session: Session, vehicle_id: int, expense_id: int):
+def delete_expense(session: Session, vehicle_id: str, expense_id: int):
     from main import VehicleEventType, VehicleExpense
     from services.vehicle_events_service import emit_event
 

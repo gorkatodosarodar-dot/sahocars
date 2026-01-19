@@ -24,7 +24,6 @@ class VehicleCreate(SQLModel):
 
 
 class VehicleRead(SQLModel):
-    id: int
     vin: str
     license_plate: str
     brand: str
@@ -48,7 +47,6 @@ class VehicleRead(SQLModel):
 
 class VehicleUpdate(SQLModel):
     vin: Optional[str] = None
-    license_plate: Optional[str] = None
     brand: Optional[str] = None
     model: Optional[str] = None
     year: Optional[int] = None

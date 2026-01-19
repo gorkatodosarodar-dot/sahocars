@@ -24,6 +24,7 @@ from services.vehicle_events_service import emit_event, list_timeline
 from services.vehicle_finance_service import get_vehicle_kpis
 from services.vehicle_status_service import change_status
 from services.vehicle_visits_service import create_visit, delete_visit, list_visits
+from routers.admin_backup import router as admin_backup_router
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
 STORAGE_ROOT = Path(os.getenv("STORAGE_ROOT", "storage")).resolve()
@@ -49,9 +50,8 @@ class VehicleStatus(str, Enum):
 
 
 class Vehicle(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)
+    license_plate: str = Field(primary_key=True, index=True, sa_column_kwargs={"unique": True})
     vin: Optional[str] = Field(default=None, index=True)
-    license_plate: Optional[str] = Field(default=None, index=True)
     brand: Optional[str] = None
     model: Optional[str] = None
     version: Optional[str] = None
@@ -70,7 +70,7 @@ class Vehicle(SQLModel, table=True):
 
 class Expense(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    vehicle_id: int = Field(foreign_key="vehicle.id")
+    vehicle_id: str = Field(foreign_key="vehicle.license_plate")
     concept: str
     amount: float
     expense_date: date
@@ -92,7 +92,7 @@ class VehicleExpense(SQLModel, table=True):
     __tablename__ = "vehicle_expenses"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    vehicle_id: int = Field(foreign_key="vehicle.id")
+    vehicle_id: str = Field(foreign_key="vehicle.license_plate")
     amount: Decimal
     currency: str = Field(default="EUR")
     date: date
@@ -107,7 +107,7 @@ class VehicleExpense(SQLModel, table=True):
 
 class Sale(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    vehicle_id: int = Field(foreign_key="vehicle.id", unique=True)
+    vehicle_id: str = Field(foreign_key="vehicle.license_plate", sa_column_kwargs={"unique": True})
     sale_price: float
     sale_date: date
     notes: Optional[str] = None
@@ -121,7 +121,7 @@ class Sale(SQLModel, table=True):
 
 class Document(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    vehicle_id: int = Field(foreign_key="vehicle.id")
+    vehicle_id: str = Field(foreign_key="vehicle.license_plate")
     doc_type: str
     file_name: str
     stored_path: str
@@ -131,7 +131,7 @@ class Document(SQLModel, table=True):
 
 class Photo(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    vehicle_id: int = Field(foreign_key="vehicle.id")
+    vehicle_id: str = Field(foreign_key="vehicle.license_plate")
     file_name: str
     stored_path: str
     display_order: Optional[int] = None
@@ -140,7 +140,7 @@ class Photo(SQLModel, table=True):
 
 class SaleDocument(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    vehicle_id: int = Field(foreign_key="vehicle.id")
+    vehicle_id: str = Field(foreign_key="vehicle.license_plate")
     sale_id: Optional[int] = Field(default=None, foreign_key="sale.id")
     original_name: str
     stored_name: str
@@ -152,7 +152,7 @@ class SaleDocument(SQLModel, table=True):
 
 class VehicleFile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    vehicle_id: int = Field(foreign_key="vehicle.id")
+    vehicle_id: str = Field(foreign_key="vehicle.license_plate")
     category: str
     original_name: str
     stored_name: str
@@ -164,7 +164,7 @@ class VehicleFile(SQLModel, table=True):
 
 class VehicleLink(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    vehicle_id: int = Field(foreign_key="vehicle.id")
+    vehicle_id: str = Field(foreign_key="vehicle.license_plate")
     title: Optional[str] = None
     url: str
     created_at: datetime = Field(default_factory=datetime.utcnow)
@@ -172,7 +172,7 @@ class VehicleLink(SQLModel, table=True):
 
 class VehicleVisit(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    vehicle_id: int = Field(foreign_key="vehicle.id")
+    vehicle_id: str = Field(foreign_key="vehicle.license_plate")
     visit_date: date
     name: str
     phone: Optional[str] = None
@@ -197,7 +197,7 @@ class VehicleEventType(str, Enum):
 
 class VehicleEvent(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    vehicle_id: int = Field(foreign_key="vehicle.id")
+    vehicle_id: str = Field(foreign_key="vehicle.license_plate")
     type: VehicleEventType
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
     actor: Optional[str] = None
@@ -219,7 +219,7 @@ class VehicleVisitCreate(SQLModel):
 
 class VehicleVisitOut(SQLModel):
     id: int
-    vehicle_id: int
+    vehicle_id: str
     visit_date: date
     name: str
     phone: Optional[str] = None
@@ -232,7 +232,7 @@ class VehicleVisitOut(SQLModel):
 
 
 class VehicleKpisOut(SQLModel):
-    vehicle_id: int
+    vehicle_id: str
     total_expenses: float
     total_cost: Optional[float] = None
     sale_price: Optional[float] = None
@@ -269,9 +269,26 @@ class VehicleCreate(SQLModel):
     notes: Optional[str] = None
 
 
+class VehicleUpdate(SQLModel):
+    vin: Optional[str] = None
+    license_plate: Optional[str] = None
+    brand: Optional[str] = None
+    model: Optional[str] = None
+    version: Optional[str] = None
+    year: Optional[int] = None
+    km: Optional[int] = None
+    color: Optional[str] = None
+    branch_id: Optional[int] = None
+    status: Optional[VehicleStatus] = None
+    sale_price: Optional[float] = None
+    purchase_date: Optional[date] = None
+    sale_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
 class Transfer(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    vehicle_id: int = Field(foreign_key="vehicle.id")
+    vehicle_id: str = Field(foreign_key="vehicle.license_plate")
     from_branch_id: Optional[int] = Field(default=None, foreign_key="branch.id")
     to_branch_id: int = Field(foreign_key="branch.id")
     transfer_date: date
@@ -319,7 +336,7 @@ class VehicleExpenseUpdate(SQLModel):
 
 class VehicleExpenseOut(SQLModel):
     id: int
-    vehicle_id: int
+    vehicle_id: str
     amount: Decimal
     currency: str
     date: date
@@ -370,6 +387,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(admin_backup_router)
+
 
 def get_session():
     with Session(engine) as session:
@@ -405,6 +424,9 @@ def list_branches(session: Session = Depends(get_session)):
 def create_vehicle(vehicle_data: VehicleCreate, session: Session = Depends(get_session)):
     try:
         data = vehicle_data.model_dump()
+        data["license_plate"] = normalize_plate(data["license_plate"])
+        if session.get(Vehicle, data["license_plate"]):
+            raise HTTPException(status_code=409, detail="La matricula ya existe")
         # Convertir string de fecha a date
         if isinstance(data.get('purchase_date'), str):
             data['purchase_date'] = datetime.fromisoformat(data['purchase_date']).date()
@@ -449,21 +471,24 @@ def list_vehicles(
         raise HTTPException(status_code=500, detail=f"Error al listar vehículos: {str(e)}")
 
 
-@app.get("/vehicles/{vehicle_id}", response_model=Vehicle)
-def get_vehicle(vehicle_id: int, session: Session = Depends(get_session)):
-    vehicle = session.get(Vehicle, vehicle_id)
+@app.get("/vehicles/{license_plate}", response_model=Vehicle)
+def get_vehicle(license_plate: str, session: Session = Depends(get_session)):
+    vehicle = session.get(Vehicle, normalize_plate(license_plate))
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
     return vehicle
 
 
-@app.patch("/vehicles/{vehicle_id}", response_model=Vehicle)
-def update_vehicle(vehicle_id: int, data: Vehicle, session: Session = Depends(get_session)):
-    vehicle = session.get(Vehicle, vehicle_id)
+@app.patch("/vehicles/{license_plate}", response_model=Vehicle)
+def update_vehicle(license_plate: str, data: VehicleUpdate, session: Session = Depends(get_session)):
+    normalized_plate = normalize_plate(license_plate)
+    vehicle = session.get(Vehicle, normalized_plate)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
     update_data = data.model_dump(exclude_unset=True)
-    update_data.pop("id", None)
+    if "license_plate" in update_data and normalize_plate(update_data["license_plate"]) != normalized_plate:
+        raise HTTPException(status_code=422, detail="La matricula no se puede modificar")
+    update_data.pop("license_plate", None)
     update_data.pop("created_at", None)
     for key, value in update_data.items():
         setattr(vehicle, key, value)
@@ -474,35 +499,57 @@ def update_vehicle(vehicle_id: int, data: Vehicle, session: Session = Depends(ge
     return vehicle
 
 
-@app.post("/vehicles/{vehicle_id}/status", response_model=Vehicle)
+@app.delete("/vehicles/{license_plate}")
+def delete_vehicle(license_plate: str, session: Session = Depends(get_session)):
+    normalized_plate = normalize_plate(license_plate)
+    vehicle = session.get(Vehicle, normalized_plate)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+
+    for model in (VehicleExpense, Expense, Sale, SaleDocument, VehicleFile, VehicleLink, VehicleVisit, VehicleEvent, Transfer, Document, Photo):
+        records = session.exec(select(model).where(model.vehicle_id == normalized_plate)).all()
+        for record in records:
+            session.delete(record)
+
+    session.delete(vehicle)
+    session.commit()
+
+    shutil.rmtree(vehicle_storage_dir(normalized_plate, "vehicles"), ignore_errors=True)
+    shutil.rmtree(vehicle_storage_dir(normalized_plate, "vehiculos"), ignore_errors=True)
+
+    return {"status": "ok"}
+
+
+@app.post("/vehicles/{license_plate}/status", response_model=Vehicle)
 def update_vehicle_status(
-    vehicle_id: int,
+    license_plate: str,
     payload: VehicleStatusChange,
     session: Session = Depends(get_session),
 ):
-    return change_status(session, vehicle_id, payload.status, note=payload.note)
+    return change_status(session, normalize_plate(license_plate), payload.status, note=payload.note)
 
 
-@app.get("/vehicles/{vehicle_id}/timeline", response_model=List[VehicleTimelineItem])
+@app.get("/vehicles/{license_plate}/timeline", response_model=List[VehicleTimelineItem])
 def get_vehicle_timeline(
-    vehicle_id: int,
+    license_plate: str,
     limit: int = Query(50, ge=1, le=200),
     types: Optional[List[VehicleEventType]] = Query(None),
     session: Session = Depends(get_session),
 ):
-    return list_timeline(session, vehicle_id, limit=limit, types=types)
+    return list_timeline(session, normalize_plate(license_plate), limit=limit, types=types)
 
 
-@app.post("/vehicles/{vehicle_id}/transfer", response_model=Transfer)
+@app.post("/vehicles/{license_plate}/transfer", response_model=Transfer)
 def transfer_vehicle(
-    vehicle_id: int,
+    license_plate: str,
     transfer: TransferCreate,
     session: Session = Depends(get_session),
 ):
-    vehicle = session.get(Vehicle, vehicle_id)
+    normalized_plate = normalize_plate(license_plate)
+    vehicle = session.get(Vehicle, normalized_plate)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    transfer_record = Transfer(vehicle_id=vehicle_id, **transfer.model_dump())
+    transfer_record = Transfer(vehicle_id=normalized_plate, **transfer.model_dump())
     session.add(transfer_record)
     vehicle.branch_id = transfer_record.to_branch_id
     vehicle.updated_at = datetime.utcnow()
@@ -512,50 +559,52 @@ def transfer_vehicle(
     return transfer_record
 
 
-@app.get("/vehicles/{vehicle_id}/expenses", response_model=List[VehicleExpenseOut])
-def list_vehicle_expenses(vehicle_id: int, session: Session = Depends(get_session)):
-    return list_vehicle_expenses_service(session, vehicle_id)
+@app.get("/vehicles/{license_plate}/expenses", response_model=List[VehicleExpenseOut])
+def list_vehicle_expenses(license_plate: str, session: Session = Depends(get_session)):
+    return list_vehicle_expenses_service(session, normalize_plate(license_plate))
 
 
-@app.post("/vehicles/{vehicle_id}/expenses", response_model=VehicleExpenseOut, status_code=201)
-def create_vehicle_expense(vehicle_id: int, payload: VehicleExpenseCreate, session: Session = Depends(get_session)):
-    return create_vehicle_expense_service(session, vehicle_id, payload)
+@app.post("/vehicles/{license_plate}/expenses", response_model=VehicleExpenseOut, status_code=201)
+def create_vehicle_expense(license_plate: str, payload: VehicleExpenseCreate, session: Session = Depends(get_session)):
+    return create_vehicle_expense_service(session, normalize_plate(license_plate), payload)
 
 
-@app.patch("/vehicles/{vehicle_id}/expenses/{expense_id}", response_model=VehicleExpenseOut)
+@app.patch("/vehicles/{license_plate}/expenses/{expense_id}", response_model=VehicleExpenseOut)
 def update_vehicle_expense(
-    vehicle_id: int,
+    license_plate: str,
     expense_id: int,
     payload: VehicleExpenseUpdate,
     session: Session = Depends(get_session),
 ):
-    return update_vehicle_expense_service(session, vehicle_id, expense_id, payload)
+    return update_vehicle_expense_service(session, normalize_plate(license_plate), expense_id, payload)
 
 
-@app.delete("/vehicles/{vehicle_id}/expenses/{expense_id}")
+@app.delete("/vehicles/{license_plate}/expenses/{expense_id}")
 def delete_vehicle_expense(
-    vehicle_id: int,
+    license_plate: str,
     expense_id: int,
     session: Session = Depends(get_session),
 ):
-    delete_vehicle_expense_service(session, vehicle_id, expense_id)
+    delete_vehicle_expense_service(session, normalize_plate(license_plate), expense_id)
     return {"status": "ok"}
 
 
-@app.get("/vehicles/{vehicle_id}/sale", response_model=Sale)
-def get_sale(vehicle_id: int, session: Session = Depends(get_session)):
-    sale = session.exec(select(Sale).where(Sale.vehicle_id == vehicle_id)).first()
+@app.get("/vehicles/{license_plate}/sale", response_model=Sale)
+def get_sale(license_plate: str, session: Session = Depends(get_session)):
+    normalized_plate = normalize_plate(license_plate)
+    sale = session.exec(select(Sale).where(Sale.vehicle_id == normalized_plate)).first()
     if not sale:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
     return sale
 
 
-@app.post("/vehicles/{vehicle_id}/sale", response_model=Sale)
-def register_sale(vehicle_id: int, sale: SaleCreate, session: Session = Depends(get_session)):
-    vehicle = session.get(Vehicle, vehicle_id)
+@app.post("/vehicles/{license_plate}/sale", response_model=Sale)
+def register_sale(license_plate: str, sale: SaleCreate, session: Session = Depends(get_session)):
+    normalized_plate = normalize_plate(license_plate)
+    vehicle = session.get(Vehicle, normalized_plate)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    sale_record = Sale(vehicle_id=vehicle_id, **sale.model_dump())
+    sale_record = Sale(vehicle_id=normalized_plate, **sale.model_dump())
     vehicle.sale_price = sale_record.sale_price
     vehicle.sale_date = sale_record.sale_date
     vehicle.status = VehicleStatus.SOLD
@@ -567,9 +616,10 @@ def register_sale(vehicle_id: int, sale: SaleCreate, session: Session = Depends(
     return sale_record
 
 
-@app.patch("/vehicles/{vehicle_id}/sale", response_model=Sale)
-def update_sale(vehicle_id: int, payload: SaleUpdate, session: Session = Depends(get_session)):
-    sale_record = session.exec(select(Sale).where(Sale.vehicle_id == vehicle_id)).first()
+@app.patch("/vehicles/{license_plate}/sale", response_model=Sale)
+def update_sale(license_plate: str, payload: SaleUpdate, session: Session = Depends(get_session)):
+    normalized_plate = normalize_plate(license_plate)
+    sale_record = session.exec(select(Sale).where(Sale.vehicle_id == normalized_plate)).first()
     if not sale_record:
         raise HTTPException(status_code=404, detail="Venta no encontrada")
     update_data = payload.model_dump(exclude_unset=True)
@@ -577,7 +627,7 @@ def update_sale(vehicle_id: int, payload: SaleUpdate, session: Session = Depends
         setattr(sale_record, key, value)
     session.add(sale_record)
     if update_data.get("sale_price") is not None or update_data.get("sale_date") is not None:
-        vehicle = session.get(Vehicle, vehicle_id)
+        vehicle = session.get(Vehicle, normalized_plate)
         if vehicle:
             vehicle.sale_price = sale_record.sale_price
             vehicle.sale_date = sale_record.sale_date
@@ -589,30 +639,34 @@ def update_sale(vehicle_id: int, payload: SaleUpdate, session: Session = Depends
     return sale_record
 
 
-@app.get("/vehicles/{vehicle_id}/documents", response_model=List[Document])
-def list_documents(vehicle_id: int, session: Session = Depends(get_session)):
-    return session.exec(select(Document).where(Document.vehicle_id == vehicle_id).order_by(Document.uploaded_at.desc())).all()
+@app.get("/vehicles/{license_plate}/documents", response_model=List[Document])
+def list_documents(license_plate: str, session: Session = Depends(get_session)):
+    normalized_plate = normalize_plate(license_plate)
+    return session.exec(
+        select(Document).where(Document.vehicle_id == normalized_plate).order_by(Document.uploaded_at.desc())
+    ).all()
 
 
-@app.post("/vehicles/{vehicle_id}/documents", response_model=Document)
+@app.post("/vehicles/{license_plate}/documents", response_model=Document)
 def upload_document(
-    vehicle_id: int,
+    license_plate: str,
     doc_type: str = Query(..., description="tipo de documento"),
     notes: Optional[str] = Query(None),
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
 ):
-    vehicle = session.get(Vehicle, vehicle_id)
+    normalized_plate = normalize_plate(license_plate)
+    vehicle = session.get(Vehicle, normalized_plate)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    storage_path = STORAGE_ROOT / "vehiculos" / str(vehicle_id) / "documentos"
+    storage_path = vehicle_storage_dir(normalized_plate, "vehiculos", "documentos")
     storage_path.mkdir(parents=True, exist_ok=True)
     safe_name = os.path.basename(file.filename)
     destination = storage_path / safe_name
     with destination.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     record = Document(
-        vehicle_id=vehicle_id,
+        vehicle_id=normalized_plate,
         doc_type=doc_type,
         file_name=safe_name,
         stored_path=str(destination),
@@ -624,32 +678,38 @@ def upload_document(
     return record
 
 
-@app.get("/vehicles/{vehicle_id}/photos", response_model=List[Photo])
-def list_photos(vehicle_id: int, session: Session = Depends(get_session)):
-    return session.exec(select(Photo).where(Photo.vehicle_id == vehicle_id).order_by(Photo.display_order, Photo.uploaded_at)).all()
+@app.get("/vehicles/{license_plate}/photos", response_model=List[Photo])
+def list_photos(license_plate: str, session: Session = Depends(get_session)):
+    normalized_plate = normalize_plate(license_plate)
+    return session.exec(
+        select(Photo)
+        .where(Photo.vehicle_id == normalized_plate)
+        .order_by(Photo.display_order, Photo.uploaded_at)
+    ).all()
 
 
-@app.post("/vehicles/{vehicle_id}/photos", response_model=Photo)
+@app.post("/vehicles/{license_plate}/photos", response_model=Photo)
 def upload_photo(
-    vehicle_id: int,
+    license_plate: str,
     display_order: Optional[int] = Query(None),
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
 ):
-    vehicle = session.get(Vehicle, vehicle_id)
+    normalized_plate = normalize_plate(license_plate)
+    vehicle = session.get(Vehicle, normalized_plate)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    existing_count = len(session.exec(select(Photo).where(Photo.vehicle_id == vehicle_id)).all())
+    existing_count = len(session.exec(select(Photo).where(Photo.vehicle_id == normalized_plate)).all())
     if existing_count >= 100:
         raise HTTPException(status_code=400, detail="Limite de 100 fotos alcanzado")
-    storage_path = STORAGE_ROOT / "vehiculos" / str(vehicle_id) / "fotos"
+    storage_path = vehicle_storage_dir(normalized_plate, "vehiculos", "fotos")
     storage_path.mkdir(parents=True, exist_ok=True)
     safe_name = os.path.basename(file.filename)
     destination = storage_path / safe_name
     with destination.open("wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     photo = Photo(
-        vehicle_id=vehicle_id,
+        vehicle_id=normalized_plate,
         file_name=safe_name,
         stored_path=str(destination),
         display_order=display_order,
@@ -660,8 +720,26 @@ def upload_photo(
     return photo
 
 
-def ensure_vehicle_exists(vehicle_id: int, session: Session) -> None:
-    if not session.get(Vehicle, vehicle_id):
+def normalize_plate(value: str) -> str:
+    normalized = value.strip().upper()
+    if not normalized:
+        raise HTTPException(status_code=422, detail="Matricula invalida")
+    return normalized
+
+
+def vehicle_storage_key(license_plate: str) -> str:
+    normalized = normalize_plate(license_plate)
+    safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in normalized)
+    return safe or "unknown"
+
+
+def vehicle_storage_dir(license_plate: str, root_folder: str, *parts: str) -> Path:
+    safe_plate = vehicle_storage_key(license_plate)
+    return STORAGE_ROOT / root_folder / safe_plate / Path(*parts)
+
+
+def ensure_vehicle_exists(license_plate: str, session: Session) -> None:
+    if not session.get(Vehicle, normalize_plate(license_plate)):
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
 
 
@@ -683,30 +761,32 @@ def write_upload_file(destination: Path, upload: UploadFile) -> int:
     return size_bytes
 
 
-@app.get("/vehicles/{vehicle_id}/files", response_model=List[VehicleFile])
+@app.get("/vehicles/{license_plate}/files", response_model=List[VehicleFile])
 def list_vehicle_files(
-    vehicle_id: int,
+    license_plate: str,
     category: Optional[str] = Query(None, description="document | expense | photo"),
     session: Session = Depends(get_session),
 ):
-    ensure_vehicle_exists(vehicle_id, session)
+    normalized_plate = normalize_plate(license_plate)
+    ensure_vehicle_exists(normalized_plate, session)
     if category and category not in {"document", "expense", "photo"}:
         raise HTTPException(status_code=400, detail="Categoria no valida")
-    query = select(VehicleFile).where(VehicleFile.vehicle_id == vehicle_id)
+    query = select(VehicleFile).where(VehicleFile.vehicle_id == normalized_plate)
     if category:
         query = query.where(VehicleFile.category == category)
     return session.exec(query.order_by(VehicleFile.created_at.desc())).all()
 
 
-@app.post("/vehicles/{vehicle_id}/files", response_model=VehicleFile)
+@app.post("/vehicles/{license_plate}/files", response_model=VehicleFile)
 def upload_vehicle_file(
-    vehicle_id: int,
+    license_plate: str,
     category: str = Form(...),
     file: UploadFile = File(...),
     notes: Optional[str] = Form(None),
     session: Session = Depends(get_session),
 ):
-    ensure_vehicle_exists(vehicle_id, session)
+    normalized_plate = normalize_plate(license_plate)
+    ensure_vehicle_exists(normalized_plate, session)
     if category not in {"document", "expense", "photo"}:
         raise HTTPException(status_code=400, detail="Categoria no valida")
     if category == "photo":
@@ -717,7 +797,7 @@ def upload_vehicle_file(
     if category == "photo" and extension not in ALLOWED_PHOTO_EXTENSIONS:
         raise HTTPException(status_code=400, detail="Extension de imagen no permitida")
 
-    storage_dir = STORAGE_ROOT / "vehicles" / str(vehicle_id)
+    storage_dir = vehicle_storage_dir(normalized_plate, "vehicles")
     storage_dir.mkdir(parents=True, exist_ok=True)
     stored_name = f"{uuid4().hex}{extension}"
     destination = storage_dir / stored_name
@@ -732,7 +812,7 @@ def upload_vehicle_file(
         file.file.close()
 
     record = VehicleFile(
-        vehicle_id=vehicle_id,
+        vehicle_id=normalized_plate,
         category=category,
         original_name=original_name,
         stored_name=stored_name,
@@ -745,79 +825,83 @@ def upload_vehicle_file(
     session.refresh(record)
     emit_event(
         session,
-        vehicle_id,
+        normalized_plate,
         VehicleEventType.FILE_UPLOADED,
         {"id": record.id, "name": record.original_name, "category": record.category},
     )
     return record
 
 
-@app.get("/vehicles/{vehicle_id}/files/{file_id}/download")
+@app.get("/vehicles/{license_plate}/files/{file_id}/download")
 def download_vehicle_file(
-    vehicle_id: int,
+    license_plate: str,
     file_id: int,
     session: Session = Depends(get_session),
 ):
+    normalized_plate = normalize_plate(license_plate)
     record = session.get(VehicleFile, file_id)
-    if not record or record.vehicle_id != vehicle_id:
+    if not record or record.vehicle_id != normalized_plate:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    file_path = STORAGE_ROOT / "vehicles" / str(vehicle_id) / record.stored_name
+    file_path = vehicle_storage_dir(normalized_plate, "vehicles") / record.stored_name
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     return FileResponse(file_path, filename=record.original_name)
 
 
-@app.delete("/vehicles/{vehicle_id}/files/{file_id}")
+@app.delete("/vehicles/{license_plate}/files/{file_id}")
 def delete_vehicle_file(
-    vehicle_id: int,
+    license_plate: str,
     file_id: int,
     session: Session = Depends(get_session),
 ):
+    normalized_plate = normalize_plate(license_plate)
     record = session.get(VehicleFile, file_id)
-    if not record or record.vehicle_id != vehicle_id:
+    if not record or record.vehicle_id != normalized_plate:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
-    file_path = STORAGE_ROOT / "vehicles" / str(vehicle_id) / record.stored_name
+    file_path = vehicle_storage_dir(normalized_plate, "vehicles") / record.stored_name
     if file_path.exists():
         file_path.unlink()
     session.delete(record)
     session.commit()
     emit_event(
         session,
-        vehicle_id,
+        normalized_plate,
         VehicleEventType.FILE_DELETED,
         {"id": record.id, "name": record.original_name, "category": record.category},
     )
     return {"status": "ok"}
 
 
-@app.get("/vehicles/{vehicle_id}/sale-documents", response_model=List[SaleDocument])
-def list_sale_documents(vehicle_id: int, session: Session = Depends(get_session)):
-    ensure_vehicle_exists(vehicle_id, session)
+@app.get("/vehicles/{license_plate}/sale-documents", response_model=List[SaleDocument])
+def list_sale_documents(license_plate: str, session: Session = Depends(get_session)):
+    normalized_plate = normalize_plate(license_plate)
+    ensure_vehicle_exists(normalized_plate, session)
     return session.exec(
         select(SaleDocument)
-        .where(SaleDocument.vehicle_id == vehicle_id)
+        .where(SaleDocument.vehicle_id == normalized_plate)
         .order_by(SaleDocument.created_at.desc())
     ).all()
 
 
-@app.post("/vehicles/{vehicle_id}/sale-documents", response_model=SaleDocument)
+@app.post("/vehicles/{license_plate}/sale-documents", response_model=SaleDocument)
 def upload_sale_document(
-    vehicle_id: int,
+    license_plate: str,
     file: UploadFile = File(...),
     notes: Optional[str] = Form(None),
     sale_id: Optional[int] = Form(None),
     session: Session = Depends(get_session),
 ):
-    ensure_vehicle_exists(vehicle_id, session)
+    normalized_plate = normalize_plate(license_plate)
+    ensure_vehicle_exists(normalized_plate, session)
     sale = None
     if sale_id is not None:
         sale = session.get(Sale, sale_id)
-        if not sale or sale.vehicle_id != vehicle_id:
+        if not sale or sale.vehicle_id != normalized_plate:
             raise HTTPException(status_code=404, detail="Venta no encontrada")
 
     original_name = os.path.basename(file.filename or "archivo")
     extension = safe_extension(original_name)
-    storage_dir = STORAGE_ROOT / "vehicles" / str(vehicle_id) / "sale-documents"
+    storage_dir = vehicle_storage_dir(normalized_plate, "vehicles", "sale-documents")
     storage_dir.mkdir(parents=True, exist_ok=True)
     stored_name = f"{uuid4().hex}{extension}"
     destination = storage_dir / stored_name
@@ -832,7 +916,7 @@ def upload_sale_document(
         file.file.close()
 
     record = SaleDocument(
-        vehicle_id=vehicle_id,
+        vehicle_id=normalized_plate,
         sale_id=sale.id if sale else None,
         original_name=original_name,
         stored_name=stored_name,
@@ -846,31 +930,33 @@ def upload_sale_document(
     return record
 
 
-@app.get("/vehicles/{vehicle_id}/sale-documents/{document_id}/download")
+@app.get("/vehicles/{license_plate}/sale-documents/{document_id}/download")
 def download_sale_document(
-    vehicle_id: int,
+    license_plate: str,
     document_id: int,
     session: Session = Depends(get_session),
 ):
+    normalized_plate = normalize_plate(license_plate)
     record = session.get(SaleDocument, document_id)
-    if not record or record.vehicle_id != vehicle_id:
+    if not record or record.vehicle_id != normalized_plate:
         raise HTTPException(status_code=404, detail="Documento de venta no encontrado")
-    file_path = STORAGE_ROOT / "vehicles" / str(vehicle_id) / "sale-documents" / record.stored_name
+    file_path = vehicle_storage_dir(normalized_plate, "vehicles", "sale-documents") / record.stored_name
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Documento de venta no encontrado")
     return FileResponse(file_path, filename=record.original_name)
 
 
-@app.delete("/vehicles/{vehicle_id}/sale-documents/{document_id}")
+@app.delete("/vehicles/{license_plate}/sale-documents/{document_id}")
 def delete_sale_document(
-    vehicle_id: int,
+    license_plate: str,
     document_id: int,
     session: Session = Depends(get_session),
 ):
+    normalized_plate = normalize_plate(license_plate)
     record = session.get(SaleDocument, document_id)
-    if not record or record.vehicle_id != vehicle_id:
+    if not record or record.vehicle_id != normalized_plate:
         raise HTTPException(status_code=404, detail="Documento de venta no encontrado")
-    file_path = STORAGE_ROOT / "vehicles" / str(vehicle_id) / "sale-documents" / record.stored_name
+    file_path = vehicle_storage_dir(normalized_plate, "vehicles", "sale-documents") / record.stored_name
     if file_path.exists():
         file_path.unlink()
     session.delete(record)
@@ -878,69 +964,72 @@ def delete_sale_document(
     return {"status": "ok"}
 
 
-@app.get("/vehicles/{vehicle_id}/links", response_model=List[VehicleLink])
-def list_vehicle_links(vehicle_id: int, session: Session = Depends(get_session)):
+@app.get("/vehicles/{license_plate}/links", response_model=List[VehicleLink])
+def list_vehicle_links(license_plate: str, session: Session = Depends(get_session)):
+    normalized_plate = normalize_plate(license_plate)
     return session.exec(
-        select(VehicleLink).where(VehicleLink.vehicle_id == vehicle_id).order_by(VehicleLink.created_at.desc())
+        select(VehicleLink).where(VehicleLink.vehicle_id == normalized_plate).order_by(VehicleLink.created_at.desc())
     ).all()
 
 
-@app.post("/vehicles/{vehicle_id}/links", response_model=VehicleLink)
+@app.post("/vehicles/{license_plate}/links", response_model=VehicleLink)
 def create_vehicle_link(
-    vehicle_id: int,
+    license_plate: str,
     payload: VehicleLinkCreate,
     session: Session = Depends(get_session),
 ):
-    if not session.get(Vehicle, vehicle_id):
+    normalized_plate = normalize_plate(license_plate)
+    if not session.get(Vehicle, normalized_plate):
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    link = VehicleLink(vehicle_id=vehicle_id, **payload.model_dump())
+    link = VehicleLink(vehicle_id=normalized_plate, **payload.model_dump())
     session.add(link)
     session.commit()
     session.refresh(link)
     return link
 
 
-@app.delete("/vehicles/{vehicle_id}/links/{link_id}")
+@app.delete("/vehicles/{license_plate}/links/{link_id}")
 def delete_vehicle_link(
-    vehicle_id: int,
+    license_plate: str,
     link_id: int,
     session: Session = Depends(get_session),
 ):
+    normalized_plate = normalize_plate(license_plate)
     link = session.get(VehicleLink, link_id)
-    if not link or link.vehicle_id != vehicle_id:
+    if not link or link.vehicle_id != normalized_plate:
         raise HTTPException(status_code=404, detail="Enlace no encontrado")
     session.delete(link)
     session.commit()
     return {"status": "ok"}
 
 
-@app.get("/vehicles/{vehicle_id}/visits", response_model=List[VehicleVisitOut])
-def list_vehicle_visits(vehicle_id: int, session: Session = Depends(get_session)):
-    return list_visits(session, vehicle_id)
+@app.get("/vehicles/{license_plate}/visits", response_model=List[VehicleVisitOut])
+def list_vehicle_visits(license_plate: str, session: Session = Depends(get_session)):
+    return list_visits(session, normalize_plate(license_plate))
 
 
-@app.post("/vehicles/{vehicle_id}/visits", response_model=VehicleVisitOut, status_code=201)
+@app.post("/vehicles/{license_plate}/visits", response_model=VehicleVisitOut, status_code=201)
 def create_vehicle_visit(
-    vehicle_id: int,
+    license_plate: str,
     payload: VehicleVisitCreate,
     session: Session = Depends(get_session),
 ):
-    return create_visit(session, vehicle_id, payload)
+    return create_visit(session, normalize_plate(license_plate), payload)
 
 
-@app.delete("/vehicles/{vehicle_id}/visits/{visit_id}")
+@app.delete("/vehicles/{license_plate}/visits/{visit_id}")
 def delete_vehicle_visit(
-    vehicle_id: int,
+    license_plate: str,
     visit_id: int,
     session: Session = Depends(get_session),
 ):
-    delete_visit(session, vehicle_id, visit_id)
+    delete_visit(session, normalize_plate(license_plate), visit_id)
     return {"status": "ok"}
 
 
-@app.get("/vehicles/{vehicle_id}/kpis", response_model=VehicleKpisOut)
-def vehicle_kpis(vehicle_id: int, session: Session = Depends(get_session)):
-    return get_vehicle_kpis(session, vehicle_id)
+@app.get("/vehicles/{license_plate}/kpis", response_model=VehicleKpisOut)
+def vehicle_kpis(license_plate: str, session: Session = Depends(get_session)):
+    return get_vehicle_kpis(session, normalize_plate(license_plate))
 
 
 
@@ -973,7 +1062,7 @@ def dashboard(
         if branch_id:
             vehicles_query = vehicles_query.where(Vehicle.branch_id == branch_id)
         vehicles = session.exec(vehicles_query).all()
-        vehicle_ids = [v.id for v in vehicles if v.id is not None]
+        vehicle_ids = [v.license_plate for v in vehicles]
 
         income = 0.0
         if vehicle_ids:
@@ -1007,9 +1096,8 @@ def dashboard(
 
 @app.get("/export/vehicles")
 def export_vehicles(session: Session = Depends(get_session)):
-    vehicles = session.exec(select(Vehicle).order_by(Vehicle.id)).all()
+    vehicles = session.exec(select(Vehicle).order_by(Vehicle.license_plate)).all()
     headers = [
-        "id",
         "vin",
         "license_plate",
         "brand",
@@ -1027,7 +1115,6 @@ def export_vehicles(session: Session = Depends(get_session)):
     lines = [",".join(headers)]
     for v in vehicles:
         values = [
-            str(v.id or ""),
             v.vin or "",
             v.license_plate or "",
             v.brand or "",

@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 
-def get_vehicle_kpis(session: Session, vehicle_id: int):
+def get_vehicle_kpis(session: Session, vehicle_id: str):
     from main import Vehicle, VehicleExpense, VehicleExpenseCategory
 
     vehicle = session.get(Vehicle, vehicle_id)

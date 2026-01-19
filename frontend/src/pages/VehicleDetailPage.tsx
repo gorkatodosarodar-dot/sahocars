@@ -29,7 +29,7 @@ import {
 import { notifications } from "@mantine/notifications";
 
 export default function VehicleDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { licensePlate } = useParams<{ licensePlate: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
@@ -93,6 +93,7 @@ export default function VehicleDetailPage() {
   const [vehicleYear, setVehicleYear] = useState<number | null>(null);
   const [vehicleNotes, setVehicleNotes] = useState("");
   const [savingVehicleDetails, setSavingVehicleDetails] = useState(false);
+  const [deletingVehicle, setDeletingVehicle] = useState(false);
   const [desiredMarginPercent, setDesiredMarginPercent] = useState<number>(10);
   const [salePrice, setSalePrice] = useState<number | null>(null);
   const [saleDate, setSaleDate] = useState<Date | null>(null);
@@ -169,11 +170,11 @@ export default function VehicleDetailPage() {
     return `${(kb / 1024).toFixed(1)} MB`;
   };
 
-  const refreshFiles = async (vehicleId: number) => {
+  const refreshFiles = async (licensePlateValue: string) => {
     try {
       const [documents, expenses] = await Promise.all([
-        api.listVehicleFiles(vehicleId, "document"),
-        api.listVehicleFiles(vehicleId, "expense"),
+        api.listVehicleFiles(licensePlateValue, "document"),
+        api.listVehicleFiles(licensePlateValue, "expense"),
       ]);
       const merged = [...documents, ...expenses].sort((a, b) =>
         (b.created_at || "").localeCompare(a.created_at || "")
@@ -188,9 +189,9 @@ export default function VehicleDetailPage() {
     }
   };
 
-  const refreshPhotos = async (vehicleId: number) => {
+  const refreshPhotos = async (licensePlateValue: string) => {
     try {
-      const data = await api.listVehicleFiles(vehicleId, "photo");
+      const data = await api.listVehicleFiles(licensePlateValue, "photo");
       setPhotos(data);
     } catch (error) {
       notifications.show({
@@ -201,9 +202,9 @@ export default function VehicleDetailPage() {
     }
   };
 
-  const refreshSaleDocuments = async (vehicleId: number) => {
+  const refreshSaleDocuments = async (licensePlateValue: string) => {
     try {
-      const data = await api.listVehicleSaleDocuments(vehicleId);
+      const data = await api.listVehicleSaleDocuments(licensePlateValue);
       setSaleDocuments(data);
     } catch (error) {
       notifications.show({
@@ -214,9 +215,9 @@ export default function VehicleDetailPage() {
     }
   };
 
-  const refreshExpenses = async (vehicleId: number) => {
+  const refreshExpenses = async (licensePlateValue: string) => {
     try {
-      const data = await api.listVehicleExpenses(vehicleId);
+      const data = await api.listVehicleExpenses(licensePlateValue);
       setExpenses(data);
     } catch (error) {
       notifications.show({
@@ -227,9 +228,9 @@ export default function VehicleDetailPage() {
     }
   };
 
-  const refreshTimeline = async (vehicleId: number, type?: VehicleEventType | null) => {
+  const refreshTimeline = async (licensePlateValue: string, type?: VehicleEventType | null) => {
     try {
-      const data = await api.getVehicleTimeline(vehicleId, {
+      const data = await api.getVehicleTimeline(licensePlateValue, {
         types: type ? [type] : undefined,
       });
       setTimeline(data);
@@ -268,9 +269,9 @@ export default function VehicleDetailPage() {
     setExpenseFileId(null);
   };
 
-  const refreshVisits = async (vehicleId: number) => {
+  const refreshVisits = async (licensePlateValue: string) => {
     try {
-      const data = await api.listVehicleVisits(vehicleId);
+      const data = await api.listVehicleVisits(licensePlateValue);
       setVisits(data);
     } catch (error) {
       notifications.show({
@@ -304,7 +305,9 @@ export default function VehicleDetailPage() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        const vehicleId = Number(id);
+        if (!licensePlate) {
+          throw new Error("Matricula no encontrada en la URL");
+        }
         const [
           vehicleData,
           branchesData,
@@ -315,14 +318,14 @@ export default function VehicleDetailPage() {
           timelineData,
           saleData,
         ] = await Promise.all([
-          api.getVehicle(vehicleId),
+          api.getVehicle(licensePlate),
           api.getBranches(),
-          api.listVehicleLinks(vehicleId),
-          api.listVehicleExpenses(vehicleId),
-          api.listVehicleVisits(vehicleId),
-          api.getVehicleKpis(vehicleId),
-          api.getVehicleTimeline(vehicleId),
-          api.getVehicleSale(vehicleId).catch(() => null),
+          api.listVehicleLinks(licensePlate),
+          api.listVehicleExpenses(licensePlate),
+          api.listVehicleVisits(licensePlate),
+          api.getVehicleKpis(licensePlate),
+          api.getVehicleTimeline(licensePlate),
+          api.getVehicleSale(licensePlate).catch(() => null),
         ]);
         setVehicle(vehicleData);
         setBranches(branchesData);
@@ -356,7 +359,11 @@ export default function VehicleDetailPage() {
         setSaleClientPhone(saleData?.client_phone ?? "");
         setSaleClientEmail(saleData?.client_email ?? "");
         setSaleClientAddress(saleData?.client_address ?? "");
-        await Promise.all([refreshFiles(vehicleId), refreshPhotos(vehicleId), refreshSaleDocuments(vehicleId)]);
+        await Promise.all([
+          refreshFiles(licensePlate),
+          refreshPhotos(licensePlate),
+          refreshSaleDocuments(licensePlate),
+        ]);
       } catch (error) {
         notifications.show({
           title: "Error",
@@ -369,10 +376,10 @@ export default function VehicleDetailPage() {
       }
     };
 
-    if (id) {
+    if (licensePlate) {
       fetchData();
     }
-  }, [id]);
+  }, [licensePlate]);
 
   if (loading) {
     return (
@@ -405,6 +412,7 @@ export default function VehicleDetailPage() {
     : "-";
 
   const handleCreateLink = async () => {
+    if (!licensePlate) return;
     if (!newLinkUrl.trim()) {
       notifications.show({
         title: "Error",
@@ -416,7 +424,7 @@ export default function VehicleDetailPage() {
 
     try {
       setCreatingLink(true);
-      const newLink = await api.createVehicleLink(Number(id), {
+      const newLink = await api.createVehicleLink(licensePlate ?? "", {
         title: newLinkTitle.trim() || undefined,
         url: newLinkUrl.trim(),
       });
@@ -440,8 +448,9 @@ export default function VehicleDetailPage() {
   };
 
   const handleDeleteLink = async (linkId: number) => {
+    if (!licensePlate) return;
     try {
-      await api.deleteVehicleLink(Number(id), linkId);
+      await api.deleteVehicleLink(licensePlate ?? "", linkId);
       setLinks(links.filter((l) => l.id !== linkId));
       setConfirmDeleteOpen(false);
       setDeletingLinkId(null);
@@ -460,7 +469,7 @@ export default function VehicleDetailPage() {
   };
 
   const handleUploadFile = async () => {
-    if (!id || !selectedFile) {
+    if (!licensePlate || !selectedFile) {
       notifications.show({
         title: "Error",
         message: "Selecciona un archivo",
@@ -471,7 +480,7 @@ export default function VehicleDetailPage() {
 
     try {
       setUploadingFile(true);
-      await api.uploadVehicleFile(Number(id), {
+      await api.uploadVehicleFile(licensePlate ?? "", {
         file: selectedFile,
         category: fileCategory,
         notes: fileNotes.trim() || undefined,
@@ -483,8 +492,8 @@ export default function VehicleDetailPage() {
         message: "Archivo subido correctamente",
         color: "green",
       });
-      await refreshFiles(Number(id));
-      await refreshTimeline(Number(id), timelineType);
+      await refreshFiles(licensePlate ?? "");
+      await refreshTimeline(licensePlate ?? "", timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -497,7 +506,7 @@ export default function VehicleDetailPage() {
   };
 
   const handleUploadPhotos = async () => {
-    if (!id || selectedPhotos.length === 0) {
+    if (!licensePlate || selectedPhotos.length === 0) {
       notifications.show({
         title: "Error",
         message: "Selecciona una o mas fotos",
@@ -510,7 +519,7 @@ export default function VehicleDetailPage() {
       setUploadingPhoto(true);
       await Promise.all(
         selectedPhotos.map((photo) =>
-          api.uploadVehicleFile(Number(id), {
+          api.uploadVehicleFile(licensePlate ?? "", {
             file: photo,
             category: "photo",
           })
@@ -522,8 +531,8 @@ export default function VehicleDetailPage() {
         message: "Fotos subidas correctamente",
         color: "green",
       });
-      await refreshPhotos(Number(id));
-      await refreshTimeline(Number(id), timelineType);
+      await refreshPhotos(licensePlate ?? "");
+      await refreshTimeline(licensePlate ?? "", timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -536,22 +545,22 @@ export default function VehicleDetailPage() {
   };
 
   const handleDeleteFile = async () => {
-    if (!id || !fileToDelete?.id) {
+    if (!licensePlate || !fileToDelete?.id) {
       return;
     }
     try {
-      await api.deleteVehicleFile(Number(id), fileToDelete.id);
+      await api.deleteVehicleFile(licensePlate ?? "", fileToDelete.id);
       notifications.show({
         title: "Exito",
         message: "Archivo eliminado correctamente",
         color: "green",
       });
       if (fileToDelete.category === "photo") {
-        await refreshPhotos(Number(id));
+        await refreshPhotos(licensePlate ?? "");
       } else {
-        await refreshFiles(Number(id));
+        await refreshFiles(licensePlate ?? "");
       }
-      await refreshTimeline(Number(id), timelineType);
+      await refreshTimeline(licensePlate ?? "", timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -565,11 +574,10 @@ export default function VehicleDetailPage() {
   };
 
   const handleSaveVehicleDetails = async () => {
-    if (!id) return;
+    if (!licensePlate) return;
     try {
       setSavingVehicleDetails(true);
-      const updated = await api.updateVehicle(Number(id), {
-        license_plate: vehicleLicensePlate.trim() || undefined,
+      const updated = await api.updateVehicle(licensePlate ?? "", {
         vin: vehicleVin.trim() || undefined,
         brand: vehicleBrand.trim() || undefined,
         model: vehicleModel.trim() || undefined,
@@ -605,8 +613,34 @@ export default function VehicleDetailPage() {
     }
   };
 
+  const handleDeleteVehicle = async () => {
+    if (!licensePlate) return;
+    const firstConfirm = window.confirm("Se va a eliminar el vehiculo y todo su historial. Continuar?");
+    if (!firstConfirm) return;
+    const secondConfirm = window.confirm("Estas seguro? Esta accion no se puede deshacer.");
+    if (!secondConfirm) return;
+    try {
+      setDeletingVehicle(true);
+      await api.deleteVehicle(licensePlate);
+      notifications.show({
+        title: "Vehiculo eliminado",
+        message: "El vehiculo y sus archivos se han eliminado",
+        color: "green",
+      });
+      navigate("/vehiculos");
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al eliminar vehiculo",
+        color: "red",
+      });
+    } finally {
+      setDeletingVehicle(false);
+    }
+  };
+
   const handleSaveSale = async () => {
-    if (!id || salePrice === null || !saleDate) {
+    if (!licensePlate || salePrice === null || !saleDate) {
       notifications.show({
         title: "Error",
         message: "Completa fecha e importe de venta",
@@ -629,8 +663,8 @@ export default function VehicleDetailPage() {
     try {
       setSavingSale(true);
       const saleRecord = saleId
-        ? await api.updateVehicleSale(Number(id), payload)
-        : await api.registerVehicleSale(Number(id), payload);
+        ? await api.updateVehicleSale(licensePlate ?? "", payload)
+        : await api.registerVehicleSale(licensePlate ?? "", payload);
       if (saleRecord) {
         setSaleId(saleRecord.id ?? null);
         setSalePrice(saleRecord.sale_price);
@@ -642,7 +676,7 @@ export default function VehicleDetailPage() {
         setSaleClientEmail(saleRecord.client_email || "");
         setSaleClientAddress(saleRecord.client_address || "");
         if (id) {
-          const updatedVehicle = await api.getVehicle(Number(id));
+          const updatedVehicle = await api.getVehicle(licensePlate ?? "");
           setVehicle(updatedVehicle);
         }
       }
@@ -663,7 +697,7 @@ export default function VehicleDetailPage() {
   };
 
   const handleUploadSaleDocument = async () => {
-    if (!id || !selectedSaleDocument) {
+    if (!licensePlate || !selectedSaleDocument) {
       notifications.show({
         title: "Error",
         message: "Selecciona un documento",
@@ -673,7 +707,7 @@ export default function VehicleDetailPage() {
     }
     try {
       setUploadingSaleDocument(true);
-      await api.uploadVehicleSaleDocument(Number(id), {
+      await api.uploadVehicleSaleDocument(licensePlate ?? "", {
         file: selectedSaleDocument,
         notes: saleDocumentNotes.trim() || undefined,
         saleId: saleId ?? undefined,
@@ -685,7 +719,7 @@ export default function VehicleDetailPage() {
         message: "Documento de venta subido correctamente",
         color: "green",
       });
-      await refreshSaleDocuments(Number(id));
+      await refreshSaleDocuments(licensePlate ?? "");
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -698,17 +732,17 @@ export default function VehicleDetailPage() {
   };
 
   const handleDeleteSaleDocument = async () => {
-    if (!id || !saleDocumentToDelete?.id) {
+    if (!licensePlate || !saleDocumentToDelete?.id) {
       return;
     }
     try {
-      await api.deleteVehicleSaleDocument(Number(id), saleDocumentToDelete.id);
+      await api.deleteVehicleSaleDocument(licensePlate ?? "", saleDocumentToDelete.id);
       notifications.show({
         title: "Exito",
         message: "Documento de venta eliminado",
         color: "green",
       });
-      await refreshSaleDocuments(Number(id));
+      await refreshSaleDocuments(licensePlate ?? "");
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -732,7 +766,7 @@ export default function VehicleDetailPage() {
   };
 
   const handleSaveExpense = async () => {
-    if (!id) return;
+    if (!licensePlate) return;
     if (!expenseDate || !expenseCategory || expenseAmount === null || expenseAmount <= 0) {
       notifications.show({
         title: "Error",
@@ -758,14 +792,14 @@ export default function VehicleDetailPage() {
       setSavingExpense(true);
       if (editingExpense?.id) {
         const updatePayload: ExpenseUpdateInput = payloadBase;
-        await api.updateVehicleExpense(Number(id), editingExpense.id, updatePayload);
+        await api.updateVehicleExpense(licensePlate ?? "", editingExpense.id, updatePayload);
         notifications.show({
           title: "Exito",
           message: "Gasto actualizado correctamente",
           color: "green",
         });
       } else {
-        await api.createVehicleExpense(Number(id), payloadBase);
+        await api.createVehicleExpense(licensePlate ?? "", payloadBase);
         notifications.show({
           title: "Exito",
           message: "Gasto creado correctamente",
@@ -774,8 +808,8 @@ export default function VehicleDetailPage() {
       }
       setExpenseModalOpen(false);
       resetExpenseForm();
-      await refreshExpenses(Number(id));
-      await refreshTimeline(Number(id), timelineType);
+      await refreshExpenses(licensePlate ?? "");
+      await refreshTimeline(licensePlate ?? "", timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -793,18 +827,18 @@ export default function VehicleDetailPage() {
   };
 
   const handleDeleteExpense = async () => {
-    if (!id || !expenseToDelete?.id) {
+    if (!licensePlate || !expenseToDelete?.id) {
       return;
     }
     try {
-      await api.deleteVehicleExpense(Number(id), expenseToDelete.id);
+      await api.deleteVehicleExpense(licensePlate ?? "", expenseToDelete.id);
       notifications.show({
         title: "Exito",
         message: "Gasto eliminado correctamente",
         color: "green",
       });
-      await refreshExpenses(Number(id));
-      await refreshTimeline(Number(id), timelineType);
+      await refreshExpenses(licensePlate ?? "");
+      await refreshTimeline(licensePlate ?? "", timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -824,7 +858,7 @@ export default function VehicleDetailPage() {
   };
 
   const handleSaveStatus = async () => {
-    if (!id || !statusValue) {
+    if (!licensePlate || !statusValue) {
       notifications.show({
         title: "Error",
         message: "Selecciona un estado",
@@ -838,11 +872,11 @@ export default function VehicleDetailPage() {
     };
     try {
       setSavingStatus(true);
-      const updated = await api.changeVehicleStatus(Number(id), payload);
+      const updated = await api.changeVehicleStatus(licensePlate ?? "", payload);
       setVehicle(updated);
       setStatusValue(updated.state as VehicleStatus | null);
       setStatusModalOpen(false);
-      await refreshTimeline(Number(id), timelineType);
+      await refreshTimeline(licensePlate ?? "", timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -858,7 +892,7 @@ export default function VehicleDetailPage() {
     const nextType = value ? (value as VehicleEventType) : null;
     setTimelineType(nextType);
     if (id) {
-      refreshTimeline(Number(id), nextType);
+      refreshTimeline(licensePlate ?? "", nextType);
     }
   };
 
@@ -876,7 +910,7 @@ export default function VehicleDetailPage() {
   };
 
   const handleSaveVisit = async () => {
-    if (!id || !visitDate || !visitName.trim()) {
+    if (!licensePlate || !visitDate || !visitName.trim()) {
       notifications.show({
         title: "Error",
         message: "Fecha y nombre son requeridos",
@@ -903,7 +937,7 @@ export default function VehicleDetailPage() {
 
     try {
       setSavingVisit(true);
-      await api.createVehicleVisit(Number(id), payload);
+      await api.createVehicleVisit(licensePlate ?? "", payload);
       notifications.show({
         title: "Exito",
         message: "Visita creada correctamente",
@@ -911,8 +945,8 @@ export default function VehicleDetailPage() {
       });
       setVisitModalOpen(false);
       resetVisitForm();
-      await refreshVisits(Number(id));
-      await refreshTimeline(Number(id), timelineType);
+      await refreshVisits(licensePlate ?? "");
+      await refreshTimeline(licensePlate ?? "", timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -930,18 +964,18 @@ export default function VehicleDetailPage() {
   };
 
   const handleDeleteVisit = async () => {
-    if (!id || !visitToDelete?.id) {
+    if (!licensePlate || !visitToDelete?.id) {
       return;
     }
     try {
-      await api.deleteVehicleVisit(Number(id), visitToDelete.id);
+      await api.deleteVehicleVisit(licensePlate ?? "", visitToDelete.id);
       notifications.show({
         title: "Exito",
         message: "Visita eliminada correctamente",
         color: "green",
       });
-      await refreshVisits(Number(id));
-      await refreshTimeline(Number(id), timelineType);
+      await refreshVisits(licensePlate ?? "");
+      await refreshTimeline(licensePlate ?? "", timelineType);
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -991,16 +1025,19 @@ export default function VehicleDetailPage() {
     <Stack gap="lg">
       <Title order={2}>Detalle del vehiculo</Title>
 
-      <Button
-        leftSection={<IconArrowLeft size={20} />}
-        onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/vehiculos"))}
-        size="md"
-        color="gray"
-        w="fit-content"
-        mb="md"
-      >
-        Volver
-      </Button>
+      <Group justify="space-between" mb="md">
+        <Button
+          leftSection={<IconArrowLeft size={20} />}
+          onClick={() => (window.history.length > 1 ? navigate(-1) : navigate("/vehiculos"))}
+          size="md"
+          color="gray"
+        >
+          Volver
+        </Button>
+        <Button color="red" variant="outline" loading={deletingVehicle} onClick={handleDeleteVehicle}>
+          Eliminar vehiculo
+        </Button>
+      </Group>
 
 
       <Tabs value={activeTab} onChange={handleTabChange} variant="outline">
@@ -1038,7 +1075,7 @@ export default function VehicleDetailPage() {
                   <TextInput
                     label="Matricula"
                     value={vehicleLicensePlate}
-                    onChange={(e) => setVehicleLicensePlate(e.currentTarget.value)}
+                    readOnly
                   />
                   <TextInput
                     label="Bastidor (VIN)"
@@ -1098,7 +1135,6 @@ export default function VehicleDetailPage() {
                 </Group>
                 <Group grow>
                   <TextInput label="Fecha de compra" value={formatDate(vehicle.purchase_date)} readOnly />
-                  <TextInput label="ID" value={String(vehicle.id ?? "")} readOnly />
                   <TextInput label="Creado" value={formatDate(vehicle.created_at)} readOnly />
                   <TextInput label="Actualizado" value={formatDate(vehicle.updated_at)} readOnly />
                 </Group>
@@ -1357,7 +1393,7 @@ export default function VehicleDetailPage() {
                               variant="light"
                               color="blue"
                               component="a"
-                              href={api.downloadVehicleFileUrl(Number(id), file.id || 0)}
+                              href={api.downloadVehicleFileUrl(licensePlate ?? "", file.id || 0)}
                               target="_blank"
                               rel="noopener noreferrer"
                               title="Abrir o descargar"
@@ -1416,7 +1452,7 @@ export default function VehicleDetailPage() {
                       <Card withBorder shadow="xs" radius="md">
                         <Stack gap="xs">
                           <img
-                            src={api.downloadVehicleFileUrl(Number(id), photo.id || 0)}
+                            src={api.downloadVehicleFileUrl(licensePlate ?? "", photo.id || 0)}
                             alt={photo.original_name}
                             style={{ width: "100%", height: 180, objectFit: "cover" }}
                           />
@@ -1429,7 +1465,7 @@ export default function VehicleDetailPage() {
                                 variant="light"
                                 color="blue"
                                 component="a"
-                                href={api.downloadVehicleFileUrl(Number(id), photo.id || 0)}
+                                href={api.downloadVehicleFileUrl(licensePlate ?? "", photo.id || 0)}
                                 download
                                 title="Descargar foto"
                               >
@@ -1714,7 +1750,7 @@ export default function VehicleDetailPage() {
                               variant="light"
                               color="blue"
                               component="a"
-                              href={api.downloadVehicleSaleDocumentUrl(Number(id), doc.id || 0)}
+                              href={api.downloadVehicleSaleDocumentUrl(licensePlate ?? "", doc.id || 0)}
                               target="_blank"
                               rel="noopener noreferrer"
                               title="Abrir o descargar"

@@ -3,9 +3,8 @@ const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 export type Branch = { id: number; name: string };
 
 export type Vehicle = {
-  id?: number;
   vin?: string | null;
-  license_plate?: string | null;
+  license_plate: string;
   brand?: string | null;
   model?: string | null;
   version?: string | null;
@@ -24,7 +23,7 @@ export type Vehicle = {
 
 export type VehicleLink = {
   id?: number;
-  vehicle_id: number;
+  vehicle_id: string;
   title?: string | null;
   url: string;
   created_at?: string | null;
@@ -34,7 +33,7 @@ export type VehicleFileCategory = "document" | "expense" | "photo";
 
 export type VehicleFile = {
   id?: number;
-  vehicle_id: number;
+  vehicle_id: string;
   category: VehicleFileCategory;
   original_name: string;
   stored_name: string;
@@ -47,7 +46,7 @@ export type VehicleFile = {
 
 export type VehicleVisit = {
   id?: number;
-  vehicle_id: number;
+  vehicle_id: string;
   visit_date: string;
   name: string;
   phone?: string | null;
@@ -79,7 +78,7 @@ export type ChangeStatusInput = {
 };
 
 export type VehicleKpis = {
-  vehicle_id: number;
+  vehicle_id: string;
   total_expenses: number;
   total_cost?: number | null;
   sale_price?: number | null;
@@ -99,7 +98,7 @@ export type VehicleExpenseCategory =
 
 export type VehicleExpense = {
   id?: number;
-  vehicle_id: number;
+  vehicle_id: string;
   amount: number;
   currency: string;
   date: string;
@@ -150,7 +149,7 @@ export type VehicleEvent = {
 
 export type Expense = {
   id?: number;
-  vehicle_id: number;
+  vehicle_id: string;
   concept: string;
   amount: number;
   expense_date: string;
@@ -159,7 +158,7 @@ export type Expense = {
 
 export type Sale = {
   id?: number;
-  vehicle_id: number;
+  vehicle_id: string;
   sale_price: number;
   sale_date: string;
   notes?: string | null;
@@ -183,7 +182,7 @@ export type SaleCreateInput = {
 
 export type SaleDocument = {
   id?: number;
-  vehicle_id: number;
+  vehicle_id: string;
   sale_id?: number | null;
   original_name: string;
   stored_name: string;
@@ -198,6 +197,39 @@ export type DashboardSummary = {
   income: number;
   expenses: number;
   margin: number;
+};
+
+export type BackupInfo = {
+  id: string;
+  filename: string;
+  created_at: string;
+  size_bytes: number;
+  sha256: string;
+  manifest?: Record<string, unknown>;
+  files_included?: boolean;
+  files_filename?: string | null;
+  files_size_bytes?: number | null;
+  files_sha256?: string | null;
+  warnings?: string[];
+};
+
+export type BackupListItem = BackupInfo & {
+  incomplete?: boolean;
+};
+
+export type BackupRestoreResult = {
+  ok: boolean;
+  dry_run: boolean;
+  restored: boolean;
+  requires_restart: boolean;
+  message: string;
+  safety_backup_id?: string | null;
+  warnings?: string[];
+};
+
+export type WipeResult = {
+  ok: boolean;
+  message: string;
 };
 
 async function fetchJson<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -236,6 +268,10 @@ function mapVehicle(vehicle: any): Vehicle {
   };
 }
 
+function encodePlate(licensePlate: string) {
+  return encodeURIComponent(licensePlate);
+}
+
 function buildError(status: number, statusText: string, detail: string) {
   return new Error(detail || `Error ${status}: ${statusText}`);
 }
@@ -256,7 +292,7 @@ async function fetchOptionalLinks(path: string): Promise<VehicleLink[]> {
 
 export const api = {
   getBranches: () => fetchJson<Branch[]>("/branches"),
-  getVehicle: (vehicleId: number) => fetchJson<Vehicle>(`/vehicles/${vehicleId}`).then(mapVehicle),
+  getVehicle: (licensePlate: string) => fetchJson<Vehicle>(`/vehicles/${encodePlate(licensePlate)}`).then(mapVehicle),
   getDashboard: (params: { from?: string; to?: string; branchId?: number }) => {
     const search = new URLSearchParams();
     if (params.from) search.append("from_date", params.from);
@@ -279,7 +315,7 @@ export const api = {
     const today = new Date().toISOString().split("T")[0];
     const mapped = {
       vin: payload.vin?.trim() || `VIN-${Date.now()}`,
-      license_plate: payload.license_plate?.trim() || "",
+      license_plate: payload.license_plate?.trim().toUpperCase() || "",
       brand: payload.brand?.trim() || "",
       model: payload.model?.trim() || "",
       year: payload.year || new Date().getFullYear(),
@@ -301,10 +337,9 @@ export const api = {
       body: JSON.stringify(mapped),
     }).then(mapVehicle);
   },
-  updateVehicle: (vehicleId: number, payload: Partial<Vehicle>) => {
+  updateVehicle: (licensePlate: string, payload: Partial<Vehicle>) => {
     const mapped = {
       vin: payload.vin,
-      license_plate: payload.license_plate,
       brand: payload.brand,
       model: payload.model,
       year: payload.year,
@@ -318,14 +353,23 @@ export const api = {
       sale_date: payload.sale_date,
       notes: payload.notes,
     };
-    return fetchJson<Vehicle>(`/vehicles/${vehicleId}`, {
+    return fetchJson<Vehicle>(`/vehicles/${encodePlate(licensePlate)}`, {
       method: "PATCH",
       body: JSON.stringify(mapped),
     }).then(mapVehicle);
   },
-  listVehicleLinks: (vehicleId: number) => fetchOptionalLinks(`/vehicles/${vehicleId}/links`),
-  createVehicleLink: async (vehicleId: number, payload: { title?: string; url: string }) => {
-    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/links`, {
+  deleteVehicle: async (licensePlate: string) => {
+    const response = await fetch(`${API_URL}/vehicles/${encodePlate(licensePlate)}`, {
+      method: "DELETE",
+    });
+    const detail = await response.text();
+    if (!response.ok) {
+      throw buildError(response.status, response.statusText, detail);
+    }
+  },
+  listVehicleLinks: (licensePlate: string) => fetchOptionalLinks(`/vehicles/${encodePlate(licensePlate)}/links`),
+  createVehicleLink: async (licensePlate: string, payload: { title?: string; url: string }) => {
+    const response = await fetch(`${API_URL}/vehicles/${encodePlate(licensePlate)}/links`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -339,8 +383,8 @@ export const api = {
     }
     return JSON.parse(detail) as VehicleLink;
   },
-  deleteVehicleLink: async (vehicleId: number, linkId: number) => {
-    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/links/${linkId}`, {
+  deleteVehicleLink: async (licensePlate: string, linkId: number) => {
+    const response = await fetch(`${API_URL}/vehicles/${encodePlate(licensePlate)}/links/${linkId}`, {
       method: "DELETE",
     });
     const detail = await response.text();
@@ -351,15 +395,15 @@ export const api = {
       throw buildError(response.status, response.statusText, detail);
     }
   },
-  listVehicleVisits: (vehicleId: number) =>
-    fetchJson<VehicleVisit[]>(`/vehicles/${vehicleId}/visits`),
-  createVehicleVisit: (vehicleId: number, payload: VehicleVisitCreateInput) =>
-    fetchJson<VehicleVisit>(`/vehicles/${vehicleId}/visits`, {
+  listVehicleVisits: (licensePlate: string) =>
+    fetchJson<VehicleVisit[]>(`/vehicles/${encodePlate(licensePlate)}/visits`),
+  createVehicleVisit: (licensePlate: string, payload: VehicleVisitCreateInput) =>
+    fetchJson<VehicleVisit>(`/vehicles/${encodePlate(licensePlate)}/visits`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  deleteVehicleVisit: async (vehicleId: number, visitId: number) => {
-    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/visits/${visitId}`, {
+  deleteVehicleVisit: async (licensePlate: string, visitId: number) => {
+    const response = await fetch(`${API_URL}/vehicles/${encodePlate(licensePlate)}/visits/${visitId}`, {
       method: "DELETE",
     });
     const detail = await response.text();
@@ -367,20 +411,20 @@ export const api = {
       throw buildError(response.status, response.statusText, detail);
     }
   },
-  listVehicleExpenses: (vehicleId: number) =>
-    fetchJson<VehicleExpense[]>(`/vehicles/${vehicleId}/expenses`),
-  createVehicleExpense: (vehicleId: number, payload: ExpenseCreateInput) =>
-    fetchJson<VehicleExpense>(`/vehicles/${vehicleId}/expenses`, {
+  listVehicleExpenses: (licensePlate: string) =>
+    fetchJson<VehicleExpense[]>(`/vehicles/${encodePlate(licensePlate)}/expenses`),
+  createVehicleExpense: (licensePlate: string, payload: ExpenseCreateInput) =>
+    fetchJson<VehicleExpense>(`/vehicles/${encodePlate(licensePlate)}/expenses`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  updateVehicleExpense: (vehicleId: number, expenseId: number, payload: ExpenseUpdateInput) =>
-    fetchJson<VehicleExpense>(`/vehicles/${vehicleId}/expenses/${expenseId}`, {
+  updateVehicleExpense: (licensePlate: string, expenseId: number, payload: ExpenseUpdateInput) =>
+    fetchJson<VehicleExpense>(`/vehicles/${encodePlate(licensePlate)}/expenses/${expenseId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
-  deleteVehicleExpense: async (vehicleId: number, expenseId: number) => {
-    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/expenses/${expenseId}`, {
+  deleteVehicleExpense: async (licensePlate: string, expenseId: number) => {
+    const response = await fetch(`${API_URL}/vehicles/${encodePlate(licensePlate)}/expenses/${expenseId}`, {
       method: "DELETE",
     });
     const detail = await response.text();
@@ -388,38 +432,38 @@ export const api = {
       throw buildError(response.status, response.statusText, detail);
     }
   },
-  getVehicleKpis: (vehicleId: number) =>
-    fetchJson<VehicleKpis>(`/vehicles/${vehicleId}/kpis`),
-  changeVehicleStatus: (vehicleId: number, payload: ChangeStatusInput) =>
-    fetchJson<Vehicle>(`/vehicles/${vehicleId}/status`, {
+  getVehicleKpis: (licensePlate: string) =>
+    fetchJson<VehicleKpis>(`/vehicles/${encodePlate(licensePlate)}/kpis`),
+  changeVehicleStatus: (licensePlate: string, payload: ChangeStatusInput) =>
+    fetchJson<Vehicle>(`/vehicles/${encodePlate(licensePlate)}/status`, {
       method: "POST",
       body: JSON.stringify(payload),
     }).then(mapVehicle),
-  registerVehicleSale: (vehicleId: number, payload: SaleCreateInput) =>
-    fetchJson<Sale>(`/vehicles/${vehicleId}/sale`, {
+  registerVehicleSale: (licensePlate: string, payload: SaleCreateInput) =>
+    fetchJson<Sale>(`/vehicles/${encodePlate(licensePlate)}/sale`, {
       method: "POST",
       body: JSON.stringify(payload),
     }),
-  getVehicleSale: (vehicleId: number) =>
-    fetchJson<Sale>(`/vehicles/${vehicleId}/sale`),
-  updateVehicleSale: (vehicleId: number, payload: Partial<SaleCreateInput>) =>
-    fetchJson<Sale>(`/vehicles/${vehicleId}/sale`, {
+  getVehicleSale: (licensePlate: string) =>
+    fetchJson<Sale>(`/vehicles/${encodePlate(licensePlate)}/sale`),
+  updateVehicleSale: (licensePlate: string, payload: Partial<SaleCreateInput>) =>
+    fetchJson<Sale>(`/vehicles/${encodePlate(licensePlate)}/sale`, {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
-  getVehicleTimeline: (vehicleId: number, params?: { limit?: number; types?: VehicleEventType[] }) => {
+  getVehicleTimeline: (licensePlate: string, params?: { limit?: number; types?: VehicleEventType[] }) => {
     const search = new URLSearchParams();
     if (params?.limit) search.append("limit", String(params.limit));
     params?.types?.forEach((type) => search.append("type", type));
     const qs = search.toString();
-    return fetchJson<VehicleEvent[]>(`/vehicles/${vehicleId}/timeline${qs ? `?${qs}` : ""}`);
+    return fetchJson<VehicleEvent[]>(`/vehicles/${encodePlate(licensePlate)}/timeline${qs ? `?${qs}` : ""}`);
   },
-  listVehicleFiles: (vehicleId: number, category?: VehicleFileCategory) => {
+  listVehicleFiles: (licensePlate: string, category?: VehicleFileCategory) => {
     const qs = category ? `?category=${encodeURIComponent(category)}` : "";
-    return fetchJson<VehicleFile[]>(`/vehicles/${vehicleId}/files${qs}`);
+    return fetchJson<VehicleFile[]>(`/vehicles/${encodePlate(licensePlate)}/files${qs}`);
   },
   uploadVehicleFile: async (
-    vehicleId: number,
+    licensePlate: string,
     payload: { file: File; category: VehicleFileCategory; notes?: string }
   ) => {
     const form = new FormData();
@@ -428,7 +472,7 @@ export const api = {
     if (payload.notes) {
       form.append("notes", payload.notes);
     }
-    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/files`, {
+    const response = await fetch(`${API_URL}/vehicles/${encodePlate(licensePlate)}/files`, {
       method: "POST",
       body: form,
     });
@@ -438,8 +482,8 @@ export const api = {
     }
     return JSON.parse(detail) as VehicleFile;
   },
-  deleteVehicleFile: async (vehicleId: number, fileId: number) => {
-    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/files/${fileId}`, {
+  deleteVehicleFile: async (licensePlate: string, fileId: number) => {
+    const response = await fetch(`${API_URL}/vehicles/${encodePlate(licensePlate)}/files/${fileId}`, {
       method: "DELETE",
     });
     const detail = await response.text();
@@ -447,12 +491,12 @@ export const api = {
       throw buildError(response.status, response.statusText, detail);
     }
   },
-  downloadVehicleFileUrl: (vehicleId: number, fileId: number) =>
-    `${API_URL}/vehicles/${vehicleId}/files/${fileId}/download`,
-  listVehicleSaleDocuments: (vehicleId: number) =>
-    fetchJson<SaleDocument[]>(`/vehicles/${vehicleId}/sale-documents`),
+  downloadVehicleFileUrl: (licensePlate: string, fileId: number) =>
+    `${API_URL}/vehicles/${encodePlate(licensePlate)}/files/${fileId}/download`,
+  listVehicleSaleDocuments: (licensePlate: string) =>
+    fetchJson<SaleDocument[]>(`/vehicles/${encodePlate(licensePlate)}/sale-documents`),
   uploadVehicleSaleDocument: async (
-    vehicleId: number,
+    licensePlate: string,
     payload: { file: File; notes?: string; saleId?: number }
   ) => {
     const form = new FormData();
@@ -463,7 +507,7 @@ export const api = {
     if (payload.saleId) {
       form.append("sale_id", String(payload.saleId));
     }
-    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/sale-documents`, {
+    const response = await fetch(`${API_URL}/vehicles/${encodePlate(licensePlate)}/sale-documents`, {
       method: "POST",
       body: form,
     });
@@ -473,8 +517,8 @@ export const api = {
     }
     return JSON.parse(detail) as SaleDocument;
   },
-  deleteVehicleSaleDocument: async (vehicleId: number, documentId: number) => {
-    const response = await fetch(`${API_URL}/vehicles/${vehicleId}/sale-documents/${documentId}`, {
+  deleteVehicleSaleDocument: async (licensePlate: string, documentId: number) => {
+    const response = await fetch(`${API_URL}/vehicles/${encodePlate(licensePlate)}/sale-documents/${documentId}`, {
       method: "DELETE",
     });
     const detail = await response.text();
@@ -482,8 +526,31 @@ export const api = {
       throw buildError(response.status, response.statusText, detail);
     }
   },
-  downloadVehicleSaleDocumentUrl: (vehicleId: number, documentId: number) =>
-    `${API_URL}/vehicles/${vehicleId}/sale-documents/${documentId}/download`,
+  downloadVehicleSaleDocumentUrl: (licensePlate: string, documentId: number) =>
+    `${API_URL}/vehicles/${encodePlate(licensePlate)}/sale-documents/${documentId}/download`,
+  createBackup: (includeFiles = true) =>
+    fetchJson<BackupInfo>("/admin/backups", {
+      method: "POST",
+      body: JSON.stringify({ include_files: includeFiles }),
+    }),
+  listBackups: () => fetchJson<BackupListItem[]>("/admin/backups"),
+  restoreBackup: (
+    backupId: string,
+    options: { dryRun?: boolean; wipeBeforeRestore?: boolean; confirmWipe?: boolean } = {}
+  ) =>
+    fetchJson<BackupRestoreResult>(`/admin/backups/${encodeURIComponent(backupId)}/restore`, {
+      method: "POST",
+      body: JSON.stringify({
+        dry_run: options.dryRun ?? false,
+        wipe_before_restore: options.wipeBeforeRestore ?? false,
+        confirm_wipe: options.confirmWipe ?? false,
+      }),
+    }),
+  wipeSystem: (confirmWipe: boolean) =>
+    fetchJson<WipeResult>("/admin/wipe", {
+      method: "POST",
+      body: JSON.stringify({ confirm_wipe: confirmWipe }),
+    }),
   exportCsv: (resource: "vehicles" | "expenses" | "sales") =>
     fetch(`${API_URL}/export/${resource}`),
 };

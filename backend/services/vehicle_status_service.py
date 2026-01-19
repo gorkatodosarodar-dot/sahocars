@@ -9,7 +9,7 @@ from sqlmodel import Session
 
 def change_status(
     session: Session,
-    vehicle_id: int,
+    vehicle_id: str,
     new_status,
     note: Optional[str] = None,
     actor: Optional[str] = None,

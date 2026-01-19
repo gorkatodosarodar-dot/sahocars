@@ -18,9 +18,8 @@ class VehicleStatus(str, Enum):
 class Vehicle(SQLModel, table=True):
     __tablename__ = "vehicle"
 
-    id: Optional[int] = Field(default=None, primary_key=True)
+    license_plate: str = Field(primary_key=True, index=True, sa_column_kwargs={"unique": True})
     vin: str = Field(index=True)
-    license_plate: str = Field(index=True)
     brand: str
     model: str
     version: Optional[str] = None

@@ -65,7 +65,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/vehiculos" element={<VehiclesPage />} />
-            <Route path="/vehiculos/:id" element={<VehicleDetailPage />} />
+            <Route path="/vehiculos/:licensePlate" element={<VehicleDetailPage />} />
             <Route path="/sucursales" element={<BranchesPage />} />
           </Routes>
         </div>

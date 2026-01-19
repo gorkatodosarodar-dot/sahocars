@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 
-def list_visits(session: Session, vehicle_id: int):
+def list_visits(session: Session, vehicle_id: str):
     from main import Vehicle, VehicleVisit
 
     if not session.get(Vehicle, vehicle_id):
@@ -17,7 +17,7 @@ def list_visits(session: Session, vehicle_id: int):
     return session.exec(query).all()
 
 
-def create_visit(session: Session, vehicle_id: int, payload):
+def create_visit(session: Session, vehicle_id: str, payload):
     from main import Vehicle, VehicleEventType, VehicleVisit
     from services.vehicle_events_service import emit_event
 
@@ -57,7 +57,7 @@ def create_visit(session: Session, vehicle_id: int, payload):
     return visit
 
 
-def delete_visit(session: Session, vehicle_id: int, visit_id: int):
+def delete_visit(session: Session, vehicle_id: str, visit_id: int):
     from main import VehicleEventType, VehicleVisit
     from services.vehicle_events_service import emit_event
 
