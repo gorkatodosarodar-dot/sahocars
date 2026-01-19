@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, BackupListItem, Branch, DashboardSummary } from "../lib/api";
-import { Anchor, Button, Card, Checkbox, Group, Loader, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Alert, Anchor, Button, Card, Checkbox, Group, Loader, Modal, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { formatCurrency } from "../lib/api";
 import { notifications } from "@mantine/notifications";
@@ -18,6 +18,14 @@ export default function DashboardPage() {
   const [selectedBackupId, setSelectedBackupId] = useState<string | null>(null);
   const [dryRunRestore, setDryRunRestore] = useState(false);
   const [wipeBeforeRestore, setWipeBeforeRestore] = useState(false);
+  const [restoreResult, setRestoreResult] = useState<{
+    ok: boolean;
+    message: string;
+    requiresRestart: boolean;
+    backupId: string;
+    safetyBackupId?: string | null;
+  } | null>(null);
+  const [manifestModalOpen, setManifestModalOpen] = useState(false);
 
   useEffect(() => {
     api.getBranches().then(setBranches).catch(() => setBranches([]));
@@ -101,6 +109,13 @@ export default function DashboardPage() {
         wipeBeforeRestore: shouldWipe,
         confirmWipe: wipeConfirmed,
       });
+      setRestoreResult({
+        ok: result.ok,
+        message: result.message,
+        requiresRestart: result.requires_restart,
+        backupId: selectedBackupId,
+        safetyBackupId: result.safety_backup_id ?? null,
+      });
       notifications.show({
         title: "Restore",
         message: result.message,
@@ -108,6 +123,12 @@ export default function DashboardPage() {
       });
       await loadBackups();
     } catch (error) {
+      setRestoreResult({
+        ok: false,
+        message: error instanceof Error ? error.message : "Error al restaurar backup",
+        requiresRestart: false,
+        backupId: selectedBackupId,
+      });
       notifications.show({
         title: "Error",
         message: error instanceof Error ? error.message : "Error al restaurar backup",
@@ -141,6 +162,10 @@ export default function DashboardPage() {
       setWipingSystem(false);
     }
   };
+
+  const selectedBackup = selectedBackupId
+    ? backups.find((item) => item.id === selectedBackupId)
+    : null;
 
   return (
     <Stack gap="lg">
@@ -199,6 +224,20 @@ export default function DashboardPage() {
       <Card withBorder radius="md" shadow="sm">
         <Stack gap="md">
           <Title order={4}>Backup y restauracion</Title>
+          <Alert color="blue" variant="light">
+            <Stack gap={4}>
+              <Text fw={600}>🔒 Restauración segura</Text>
+              <Text size="sm">
+                Las restauraciones en Sahocars son atómicas.
+              </Text>
+              <Text size="sm">
+                Si una restauración falla, el estado actual no se modifica.
+              </Text>
+              <Text size="sm">
+                Tras una restauración correcta, será necesario reiniciar la aplicación.
+              </Text>
+            </Stack>
+          </Alert>
           <Text size="sm" c="dimmed">
             Backup completo (BD + archivos) y restauracion del sistema
           </Text>
@@ -241,9 +280,70 @@ export default function DashboardPage() {
               Vaciar sistema
             </Button>
           </Group>
+          {restoreResult && (
+            <Card withBorder radius="md" padding="md">
+              <Stack gap={6}>
+                <Text fw={600} c={restoreResult.ok ? "green" : "red"}>
+                  {restoreResult.ok ? "Restore completado" : "Restore con error"}
+                </Text>
+                <Text size="sm">{restoreResult.message}</Text>
+                <Text size="sm">Backup usado: {restoreResult.backupId}</Text>
+                {restoreResult.ok ? (
+                  <Text size="sm" c={restoreResult.requiresRestart ? "orange" : "dimmed"}>
+                    {restoreResult.requiresRestart
+                      ? "Reinicio requerido para aplicar la restauración."
+                      : "No se requiere reinicio."}
+                  </Text>
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    El estado actual no se ha modificado.
+                  </Text>
+                )}
+                {restoreResult.safetyBackupId ? (
+                  <Text size="sm" c="dimmed">
+                    Backup de seguridad: {restoreResult.safetyBackupId}
+                  </Text>
+                ) : null}
+                {restoreResult.ok && (
+                  <Group>
+                    <Button
+                      variant="light"
+                      onClick={() => setManifestModalOpen(true)}
+                      disabled={!selectedBackup?.manifest}
+                    >
+                      Ver manifest
+                    </Button>
+                  </Group>
+                )}
+              </Stack>
+            </Card>
+          )}
         </Stack>
       </Card>
+      <BackupManifestModal
+        opened={manifestModalOpen}
+        onClose={() => setManifestModalOpen(false)}
+        manifest={(selectedBackup?.manifest as Record<string, unknown>) ?? null}
+      />
     </Stack>
+  );
+}
+
+function BackupManifestModal({
+  opened,
+  onClose,
+  manifest,
+}: {
+  opened: boolean;
+  onClose: () => void;
+  manifest: Record<string, unknown> | null;
+}) {
+  return (
+    <Modal opened={opened} onClose={onClose} title="Manifest del backup" centered size="lg">
+      <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+        {manifest ? JSON.stringify(manifest, null, 2) : "No hay manifest disponible"}
+      </pre>
+    </Modal>
   );
 }
 

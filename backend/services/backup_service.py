@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import threading
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -18,9 +19,20 @@ BACKUP_PREFIX = "backup_"
 BACKUP_EXTENSION = ".sqlite"
 FILES_ARCHIVE_SUFFIX = ".files.zip"
 MANIFEST_SUFFIX = ".manifest.json"
+RESTORE_STAGING_DIR = "restore_staging"
+BACKUP_METHOD = "sqlite_backup_api"
+RESTORE_METHOD = "staged_swap"
+
+_restore_lock = threading.Lock()
 
 
-def create_backup(database_url: str, include_files: bool = True) -> dict[str, Any]:
+def create_backup(
+    database_url: str,
+    include_files: bool = True,
+    allow_during_restore: bool = False,
+) -> dict[str, Any]:
+    if _restore_lock.locked() and not allow_during_restore:
+        raise HTTPException(status_code=409, detail={"error": "restore_in_progress"})
     backup_dir = _resolve_backup_dir()
     backend_root = _backend_root()
     db_path = _resolve_sqlite_path(database_url, backend_root)
@@ -43,6 +55,8 @@ def create_backup(database_url: str, include_files: bool = True) -> dict[str, An
     size_bytes = backup_path.stat().st_size
     sha256 = _sha256_for_file(backup_path)
     created_at = datetime.utcnow().isoformat()
+    app_version = _get_app_version()
+    schema_version = _get_schema_version(database_url, db_path)
 
     files_included = False
     files_size_bytes = None
@@ -66,8 +80,10 @@ def create_backup(database_url: str, include_files: bool = True) -> dict[str, An
         "size_bytes": size_bytes,
         "sha256": sha256,
         "db_engine": "sqlite",
-        "app_version": os.getenv("APP_VERSION", "unknown"),
-        "schema_version": os.getenv("SCHEMA_VERSION", "unknown"),
+        "app_version": app_version,
+        "schema_version": schema_version,
+        "backup_method": BACKUP_METHOD,
+        "restore_method": RESTORE_METHOD,
         "integrity_check": integrity_result,
         "files_included": files_included,
         "files_filename": files_archive_path.name if files_included else None,
@@ -114,10 +130,35 @@ def restore_backup(
     wipe_before_restore: bool = False,
     confirm_wipe: bool = False,
 ) -> dict[str, Any]:
+    # Restore en 2 fases: staging/validacion y swap atomico.
+    if not _restore_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail={"error": "restore_in_progress"})
+    try:
+        return _restore_backup_locked(
+            database_url=database_url,
+            backup_id=backup_id,
+            dry_run=dry_run,
+            wipe_before_restore=wipe_before_restore,
+            confirm_wipe=confirm_wipe,
+        )
+    finally:
+        _restore_lock.release()
+
+
+def _restore_backup_locked(
+    database_url: str,
+    backup_id: str,
+    dry_run: bool = True,
+    wipe_before_restore: bool = False,
+    confirm_wipe: bool = False,
+) -> dict[str, Any]:
     backup_dir = _resolve_backup_dir()
     backend_root = _backend_root()
     db_path = _resolve_sqlite_path(database_url, backend_root)
     storage_root = _resolve_storage_root(backend_root)
+    staging_root = backup_dir / RESTORE_STAGING_DIR / backup_id
+    staging_db_path = staging_root / "restored.sqlite"
+    staging_storage_path = staging_root / "storage_tmp"
 
     backup_path = backup_dir / f"{BACKUP_PREFIX}{backup_id}{BACKUP_EXTENSION}"
     if not backup_path.exists():
@@ -129,6 +170,8 @@ def restore_backup(
     warnings = _validate_backup(backup_path, manifest)
     files_archive_path = backup_dir / f"{BACKUP_PREFIX}{backup_id}{FILES_ARCHIVE_SUFFIX}"
     warnings.extend(_validate_files(files_archive_path, manifest))
+    if wipe_before_restore or confirm_wipe:
+        warnings.append("wipe_before_restore esta obsoleto y se ignora; el restore es atomico")
     if dry_run:
         return {
             "ok": True,
@@ -140,22 +183,36 @@ def restore_backup(
             "warnings": warnings,
         }
 
-    safety_backup = create_backup(database_url, include_files=True)
+    safety_backup = create_backup(database_url, include_files=True, allow_during_restore=True)
 
-    if wipe_before_restore:
-        if not confirm_wipe:
-            raise HTTPException(status_code=422, detail="confirm_wipe es requerido para vaciar antes del restore")
-        _sqlite_wipe(db_path)
-        _wipe_storage(storage_root)
-        warnings.append("Se ha vaciado el sistema antes de la restauracion")
-
-    try:
-        _sqlite_restore(backup_path, db_path)
-    except sqlite3.Error as exc:
-        raise HTTPException(status_code=409, detail=f"No se pudo restaurar el backup: {exc}") from exc
-
+    _prepare_restore_staging(staging_root)
+    _restore_db_to_staging(backup_path, staging_db_path)
+    _validate_staging_db(staging_db_path)
     if manifest.get("files_included"):
-        _restore_files_archive(files_archive_path, storage_root)
+        extracted_files = _restore_files_to_staging(files_archive_path, staging_storage_path)
+        _validate_staging_storage(staging_storage_path, extracted_files, warnings)
+
+    old_db_path = None
+    old_storage_path = None
+    try:
+        _dispose_engines()
+        old_db_path = _swap_db(db_path, staging_db_path)
+        if manifest.get("files_included"):
+            old_storage_path = _swap_storage(storage_root, staging_storage_path)
+    except Exception as exc:
+        _rollback_db(db_path, old_db_path, staging_db_path)
+        _rollback_storage(storage_root, old_storage_path, staging_storage_path)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Restore fallido. Puedes recuperar con el backup de seguridad "
+                f"{safety_backup.get('id')}. Error: {exc}"
+            ),
+        ) from exc
+    finally:
+        _cleanup_staging(staging_root)
+
+    _cleanup_old_paths(old_db_path, old_storage_path)
 
     return {
         "ok": True,
@@ -228,6 +285,33 @@ def _resolve_sqlite_path(database_url: str, base_dir: Path) -> Path:
     return db_path
 
 
+def _dispose_engines() -> None:
+    for module_name in ("db", "main"):
+        try:
+            module = __import__(module_name)
+            engine = getattr(module, "engine", None)
+            if engine and hasattr(engine, "dispose"):
+                engine.dispose()
+        except Exception:
+            continue
+
+
+def _get_app_version() -> str:
+    try:
+        from app.version import __version__
+
+        return __version__
+    except Exception:
+        return "0.0.0"
+
+
+def _get_schema_version(database_url: str, db_path: Path) -> str:
+    if database_url.startswith("sqlite"):
+        version = _sqlite_user_version(db_path)
+        return f"sqlite_user_version:{version}"
+    return "unknown"
+
+
 def _generate_backup_id() -> str:
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     suffix = uuid4().hex[:6]
@@ -255,6 +339,17 @@ def _sqlite_integrity_check(backup_path: Path) -> str:
     if not result:
         return "unknown"
     return str(result[0])
+
+
+def _sqlite_user_version(db_path: Path) -> int:
+    if not db_path.exists():
+        return 0
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute("PRAGMA user_version;")
+        result = cursor.fetchone()
+    if not result:
+        return 0
+    return int(result[0])
 
 
 def _sha256_for_file(path: Path) -> str:
@@ -329,22 +424,94 @@ def _zip_directory(source_dir: Path, archive_path: Path, allow_missing: bool = F
                 archive.write(item, item.relative_to(source_dir))
 
 
-def _restore_files_archive(archive_path: Path, storage_root: Path) -> None:
-    temp_extract = archive_path.parent / f"{archive_path.stem}_extract"
-    if temp_extract.exists():
-        _remove_dir(temp_extract)
-    temp_extract.mkdir(parents=True, exist_ok=True)
+def _prepare_restore_staging(staging_root: Path) -> None:
+    if staging_root.exists():
+        _remove_dir(staging_root)
+    staging_root.mkdir(parents=True, exist_ok=True)
 
+
+def _restore_db_to_staging(backup_path: Path, staging_db_path: Path) -> None:
+    _sqlite_restore(backup_path, staging_db_path)
+
+
+def _validate_staging_db(staging_db_path: Path) -> None:
+    if not staging_db_path.exists():
+        raise HTTPException(status_code=409, detail="DB restaurada no encontrada en staging")
+    integrity = _sqlite_integrity_check(staging_db_path)
+    if integrity != "ok":
+        raise HTTPException(status_code=409, detail=f"Integrity check fallo en staging: {integrity}")
+
+
+def _restore_files_to_staging(archive_path: Path, staging_storage_path: Path) -> int:
+    if staging_storage_path.exists():
+        _remove_dir(staging_storage_path)
+    staging_storage_path.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(archive_path, "r") as archive:
-        _safe_extract(archive, temp_extract)
+        members = [m for m in archive.namelist() if not m.endswith("/")]
+        _safe_extract(archive, staging_storage_path)
+    return len(members)
 
-    temp_old = storage_root.parent / f"{storage_root.name}_old_{uuid4().hex[:6]}"
-    try:
+
+def _validate_staging_storage(staging_storage_path: Path, extracted_files: int, warnings: list[str]) -> None:
+    has_files = any(item.is_file() for item in staging_storage_path.rglob("*"))
+    if not has_files:
+        if extracted_files == 0:
+            warnings.append("Storage staging vacio (backup sin archivos)")
+            return
+        raise HTTPException(status_code=409, detail="Storage staging vacio o invalido")
+
+
+def _swap_db(db_path: Path, staging_db_path: Path) -> Path | None:
+    old_db_path = None
+    if db_path.exists():
+        old_db_path = db_path.with_name(f"{db_path.name}.old_{uuid4().hex[:6]}")
+        os.replace(db_path, old_db_path)
+    os.replace(staging_db_path, db_path)
+    return old_db_path
+
+
+def _swap_storage(storage_root: Path, staging_storage_path: Path) -> Path | None:
+    old_storage = None
+    if storage_root.exists():
+        old_storage = storage_root.parent / f"{storage_root.name}_old_{uuid4().hex[:6]}"
+        storage_root.replace(old_storage)
+    staging_storage_path.replace(storage_root)
+    return old_storage
+
+
+def _rollback_db(db_path: Path, old_db_path: Path | None, staging_db_path: Path) -> None:
+    if old_db_path and old_db_path.exists():
+        if db_path.exists():
+            _safe_remove(db_path)
+        old_db_path.replace(db_path)
+    elif staging_db_path.exists() and not db_path.exists():
+        staging_db_path.replace(db_path)
+
+
+def _rollback_storage(storage_root: Path, old_storage_path: Path | None, staging_storage_path: Path) -> None:
+    if old_storage_path and old_storage_path.exists():
         if storage_root.exists():
-            storage_root.replace(temp_old)
-        temp_extract.replace(storage_root)
-    finally:
-        _remove_dir(temp_old)
+            _remove_dir(storage_root)
+        old_storage_path.replace(storage_root)
+    elif staging_storage_path.exists() and not storage_root.exists():
+        staging_storage_path.replace(storage_root)
+
+
+def _cleanup_staging(staging_root: Path) -> None:
+    if staging_root.exists():
+        _remove_dir(staging_root)
+
+
+def _cleanup_old_paths(old_db_path: Path | None, old_storage_path: Path | None) -> None:
+    if old_db_path and old_db_path.exists():
+        _safe_remove(old_db_path)
+    if old_storage_path and old_storage_path.exists():
+        _remove_dir(old_storage_path)
+
+
+def _safe_remove(path: Path) -> None:
+    if path.exists():
+        path.unlink(missing_ok=True)
 
 
 def _safe_extract(archive: zipfile.ZipFile, target_dir: Path) -> None:
@@ -419,7 +586,12 @@ def _wipe_storage(storage_root: Path) -> None:
 # Checklist manual:
 # 1) Crear vehiculo con fotos/documentos y gastos asociados.
 # 2) POST /admin/backups (include_files=true).
-# 3) Borrar vehiculo y archivos en storage.
+# 3) Borrar/modificar datos y borrar algunos archivos manualmente.
 # 4) POST /admin/backups/{id}/restore con dry_run=true.
 # 5) POST /admin/backups/{id}/restore con dry_run=false.
 # 6) Verificar vehiculo, gastos y apertura de fotos/documentos.
+# 7) Simular zip corrupto y confirmar que el estado actual NO cambia.
+# Nota de hardening:
+# - restore protegido por lock global
+# - dispose de engines antes del swap
+# - warning si ZIP extrae 0 ficheros
