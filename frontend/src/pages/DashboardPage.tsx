@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, BackupListItem, Branch, DashboardSummary } from "../lib/api";
-import { Alert, Anchor, Button, Card, Checkbox, Group, Loader, Modal, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Alert, Anchor, Button, Card, Checkbox, Group, Loader, Modal, MultiSelect, Select, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { formatCurrency } from "../lib/api";
 import { notifications } from "@mantine/notifications";
@@ -18,6 +18,17 @@ export default function DashboardPage() {
   const [selectedBackupId, setSelectedBackupId] = useState<string | null>(null);
   const [dryRunRestore, setDryRunRestore] = useState(false);
   const [wipeBeforeRestore, setWipeBeforeRestore] = useState(false);
+  const [vehicles, setVehicles] = useState<{ value: string; label: string }[]>([]);
+  const [selectedVehicles, setSelectedVehicles] = useState<string[]>([]);
+  const [includeFiles, setIncludeFiles] = useState(true);
+  const [exportingVehicles, setExportingVehicles] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importMode, setImportMode] = useState<"skip" | "overwrite" | "new_copy">("new_copy");
+  const [importResult, setImportResult] = useState<{
+    imported: number;
+    skipped: number;
+    errors: string[];
+  } | null>(null);
   const [restoreResult, setRestoreResult] = useState<{
     ok: boolean;
     message: string;
@@ -29,6 +40,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     api.getBranches().then(setBranches).catch(() => setBranches([]));
+    api
+      .listVehicles({})
+      .then((data) =>
+        setVehicles(data.map((vehicle) => ({ value: vehicle.license_plate, label: vehicle.license_plate })))
+      )
+      .catch(() => setVehicles([]));
   }, []);
 
   useEffect(() => {
@@ -166,6 +183,66 @@ export default function DashboardPage() {
   const selectedBackup = selectedBackupId
     ? backups.find((item) => item.id === selectedBackupId)
     : null;
+
+  const handleExportVehicles = async () => {
+    if (!selectedVehicles.length) {
+      notifications.show({
+        title: "Selecciona vehiculos",
+        message: "Elige al menos un vehiculo para exportar",
+        color: "red",
+      });
+      return;
+    }
+    try {
+      setExportingVehicles(true);
+      const blob = await api.exportVehiclesPackage(selectedVehicles, includeFiles);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `vehiculos_export_${new Date().toISOString().slice(0, 10)}.zip`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al exportar vehiculos",
+        color: "red",
+      });
+    } finally {
+      setExportingVehicles(false);
+    }
+  };
+
+  const handleImportVehicles = async () => {
+    if (!importFile) {
+      notifications.show({
+        title: "Archivo requerido",
+        message: "Selecciona un archivo zip para importar",
+        color: "red",
+      });
+      return;
+    }
+    try {
+      const result = await api.importVehiclesPackage({ file: importFile, mode: importMode });
+      setImportResult({
+        imported: result.imported,
+        skipped: result.skipped,
+        errors: result.errors,
+      });
+      notifications.show({
+        title: "Import completado",
+        message: "Revisa el resultado en pantalla",
+        color: "green",
+      });
+    } catch (error) {
+      setImportResult(null);
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al importar vehiculos",
+        color: "red",
+      });
+    }
+  };
 
   return (
     <Stack gap="lg">
@@ -317,6 +394,63 @@ export default function DashboardPage() {
                 )}
               </Stack>
             </Card>
+          )}
+        </Stack>
+      </Card>
+
+      <Card withBorder radius="md" shadow="sm">
+        <Stack gap="md">
+          <Title order={4}>Export / Import vehiculos</Title>
+          <MultiSelect
+            label="Vehiculos a exportar"
+            data={vehicles}
+            value={selectedVehicles}
+            onChange={setSelectedVehicles}
+            searchable
+            placeholder="Selecciona uno o varios"
+          />
+          <Checkbox
+            label="Incluir archivos"
+            checked={includeFiles}
+            onChange={(event) => setIncludeFiles(event.currentTarget.checked)}
+          />
+          <Group>
+            <Button onClick={handleExportVehicles} loading={exportingVehicles}>
+              Exportar vehiculos
+            </Button>
+          </Group>
+          <Select
+            label="Modo de importacion"
+            value={importMode}
+            onChange={(value) => setImportMode((value as "skip" | "overwrite" | "new_copy") || "new_copy")}
+            data={[
+              { value: "skip", label: "skip" },
+              { value: "overwrite", label: "overwrite" },
+              { value: "new_copy", label: "new_copy" },
+            ]}
+          />
+          <input
+            type="file"
+            accept=".zip"
+            onChange={(event) => setImportFile(event.currentTarget.files?.[0] ?? null)}
+          />
+          <Group>
+            <Button variant="outline" onClick={handleImportVehicles}>
+              Importar vehiculos
+            </Button>
+          </Group>
+          {importResult && (
+            <Stack gap={4}>
+              <Text size="sm" c="dimmed">
+                Importados: {importResult.imported} | Omitidos: {importResult.skipped} | Errores:{" "}
+                {importResult.errors.length}
+              </Text>
+              {importResult.errors.length ? (
+                <Text size="sm" c="red">
+                  {importResult.errors.join(" | ")}
+                </Text>
+              ) : null}
+            </Stack>
           )}
         </Stack>
       </Card>

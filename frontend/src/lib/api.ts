@@ -232,6 +232,14 @@ export type WipeResult = {
   message: string;
 };
 
+export type VehicleTransferResult = {
+  ok: boolean;
+  imported: number;
+  skipped: number;
+  errors: string[];
+  id_map: Record<string, Record<string, string>>;
+};
+
 async function fetchJson<T>(path: string, options: RequestInit = {}): Promise<T> {
   try {
     const response = await fetch(`${API_URL}${path}`, {
@@ -551,6 +559,32 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ confirm_wipe: confirmWipe }),
     }),
+  exportVehiclesPackage: async (vehicleIds: string[], includeFiles = true) => {
+    const response = await fetch(`${API_URL}/admin/vehicles/export`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ vehicle_ids: vehicleIds, include_files: includeFiles }),
+    });
+    if (!response.ok) {
+      const detail = await response.text();
+      throw buildError(response.status, response.statusText, detail);
+    }
+    return response.blob();
+  },
+  importVehiclesPackage: async (payload: { file: File; mode: "skip" | "overwrite" | "new_copy" }) => {
+    const form = new FormData();
+    form.append("file", payload.file);
+    form.append("mode", payload.mode);
+    const response = await fetch(`${API_URL}/admin/vehicles/import`, {
+      method: "POST",
+      body: form,
+    });
+    const detail = await response.text();
+    if (!response.ok) {
+      throw buildError(response.status, response.statusText, detail);
+    }
+    return JSON.parse(detail) as VehicleTransferResult;
+  },
   exportCsv: (resource: "vehicles" | "expenses" | "sales") =>
     fetch(`${API_URL}/export/${resource}`),
 };
