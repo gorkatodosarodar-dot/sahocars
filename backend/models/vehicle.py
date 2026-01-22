@@ -4,15 +4,18 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Optional
 
+from sqlalchemy import Column, Enum as SAEnum
 from sqlmodel import Field, SQLModel
 
 
 class VehicleStatus(str, Enum):
-    PENDING = "pendiente recepcion"
-    REVIEW = "en revision"
-    SHOWROOM = "en exposicion"
-    RESERVED = "reservado"
-    SOLD = "vendido"
+    INTAKE = "intake"
+    PREP = "prep"
+    READY = "ready"
+    PUBLISHED = "published"
+    RESERVED = "reserved"
+    SOLD = "sold"
+    DISCARDED = "discarded"
 
 
 class Vehicle(SQLModel, table=True):
@@ -27,7 +30,16 @@ class Vehicle(SQLModel, table=True):
     km: int
     color: Optional[str] = None
     branch_id: int = Field(foreign_key="branch.id")
-    status: VehicleStatus = Field(default=VehicleStatus.PENDING)
+    status: VehicleStatus = Field(
+        default=VehicleStatus.INTAKE,
+        sa_column=Column(
+            SAEnum(VehicleStatus, values_callable=lambda enums: [e.value for e in enums], native_enum=False)
+        ),
+    )
+    status_changed_at: datetime = Field(default_factory=datetime.utcnow)
+    status_reason: Optional[str] = None
+    sold_at: Optional[date] = None
+    reserved_until: Optional[date] = None
     purchase_date: date
     sale_price: Optional[float] = None
     sale_date: Optional[date] = None

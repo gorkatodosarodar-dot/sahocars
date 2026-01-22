@@ -20,6 +20,9 @@ class VehicleCreate(SQLModel):
     version: Optional[str] = None
     color: Optional[str] = None
     status: Optional[VehicleStatus] = None
+    status_reason: Optional[str] = None
+    sold_at: Optional[date] = None
+    reserved_until: Optional[date] = None
     notes: Optional[str] = None
 
 
@@ -33,6 +36,10 @@ class VehicleRead(SQLModel):
     branch_id: int
     purchase_date: date
     status: VehicleStatus
+    status_changed_at: datetime
+    status_reason: Optional[str] = None
+    sold_at: Optional[date] = None
+    reserved_until: Optional[date] = None
     version: Optional[str] = None
     color: Optional[str] = None
     notes: Optional[str] = None
@@ -56,6 +63,9 @@ class VehicleUpdate(SQLModel):
     version: Optional[str] = None
     color: Optional[str] = None
     status: Optional[VehicleStatus] = None
+    status_reason: Optional[str] = None
+    sold_at: Optional[date] = None
+    reserved_until: Optional[date] = None
     notes: Optional[str] = None
     sale_price: Optional[float] = None
     sale_date: Optional[date] = None

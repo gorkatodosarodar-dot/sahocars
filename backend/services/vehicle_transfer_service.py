@@ -510,9 +510,23 @@ def _delete_vehicle_related(session: Session, license_plate: str) -> None:
         VehicleFile,
         VehicleLink,
         VehicleVisit,
+        VehicleStatusEvent,
     )
 
-    for model in (VehicleExpense, Expense, SaleDocument, Sale, VehicleFile, VehicleLink, VehicleVisit, VehicleEvent, Transfer, Document, Photo):
+    for model in (
+        VehicleExpense,
+        Expense,
+        SaleDocument,
+        Sale,
+        VehicleFile,
+        VehicleLink,
+        VehicleVisit,
+        VehicleEvent,
+        VehicleStatusEvent,
+        Transfer,
+        Document,
+        Photo,
+    ):
         records = session.exec(select(model).where(model.vehicle_id == license_plate)).all()
         for record in records:
             session.delete(record)

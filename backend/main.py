@@ -12,7 +12,7 @@ from typing import List, Optional
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import Column, JSON
+from sqlalchemy import Column, Enum as SAEnum, JSON
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from services.vehicle_expenses_service import (
     create_expense as create_vehicle_expense_service,
@@ -22,7 +22,7 @@ from services.vehicle_expenses_service import (
 )
 from services.vehicle_events_service import emit_event, list_timeline
 from services.vehicle_finance_service import get_vehicle_kpis
-from services.vehicle_status_service import change_status
+from services.vehicle_status_service import change_status, list_status_events
 from services.vehicle_visits_service import create_visit, delete_visit, list_visits
 from routers.admin_backup import router as admin_backup_router
 from routers.admin_vehicle_transfer import router as admin_vehicle_transfer_router
@@ -41,13 +41,13 @@ class Branch(SQLModel, table=True):
 
 
 class VehicleStatus(str, Enum):
-    IN_STOCK = "pendiente recepcion"
-    IN_PREP = "en revision"
-    LISTED = "en exposicion"
-    RESERVED = "reservado"
-    SOLD = "vendido"
-    DISCARDED = "descartado"
-    RETURNED = "devuelto"
+    INTAKE = "intake"
+    PREP = "prep"
+    READY = "ready"
+    PUBLISHED = "published"
+    RESERVED = "reserved"
+    SOLD = "sold"
+    DISCARDED = "discarded"
 
 
 class Vehicle(SQLModel, table=True):
@@ -60,7 +60,16 @@ class Vehicle(SQLModel, table=True):
     km: Optional[int] = None
     color: Optional[str] = None
     branch_id: Optional[int] = Field(default=None, foreign_key="branch.id")
-    status: Optional[VehicleStatus] = Field(default=VehicleStatus.IN_STOCK)
+    status: VehicleStatus = Field(
+        default=VehicleStatus.INTAKE,
+        sa_column=Column(
+            SAEnum(VehicleStatus, values_callable=lambda enums: [e.value for e in enums], native_enum=False)
+        ),
+    )
+    status_changed_at: datetime = Field(default_factory=datetime.utcnow)
+    status_reason: Optional[str] = None
+    sold_at: Optional[date] = None
+    reserved_until: Optional[date] = None
     sale_price: Optional[float] = None
     purchase_date: Optional[date] = None
     sale_date: Optional[date] = None
@@ -205,6 +214,24 @@ class VehicleEvent(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class VehicleStatusEvent(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    vehicle_id: str = Field(foreign_key="vehicle.license_plate")
+    from_status: VehicleStatus = Field(
+        sa_column=Column(
+            SAEnum(VehicleStatus, values_callable=lambda enums: [e.value for e in enums], native_enum=False)
+        )
+    )
+    to_status: VehicleStatus = Field(
+        sa_column=Column(
+            SAEnum(VehicleStatus, values_callable=lambda enums: [e.value for e in enums], native_enum=False)
+        )
+    )
+    changed_at: datetime = Field(default_factory=datetime.utcnow)
+    note: Optional[str] = None
+    actor: Optional[str] = None
+
+
 class VehicleLinkCreate(SQLModel):
     title: Optional[str] = None
     url: str
@@ -243,8 +270,10 @@ class VehicleKpisOut(SQLModel):
 
 
 class VehicleStatusChange(SQLModel):
-    status: VehicleStatus
+    to_status: VehicleStatus
     note: Optional[str] = None
+    reserved_until: Optional[date] = None
+    sold_at: Optional[date] = None
 
 
 class VehicleTimelineItem(SQLModel):
@@ -267,6 +296,9 @@ class VehicleCreate(SQLModel):
     version: Optional[str] = None
     color: Optional[str] = None
     status: Optional[VehicleStatus] = None
+    status_reason: Optional[str] = None
+    sold_at: Optional[date] = None
+    reserved_until: Optional[date] = None
     notes: Optional[str] = None
 
 
@@ -281,6 +313,9 @@ class VehicleUpdate(SQLModel):
     color: Optional[str] = None
     branch_id: Optional[int] = None
     status: Optional[VehicleStatus] = None
+    status_reason: Optional[str] = None
+    sold_at: Optional[date] = None
+    reserved_until: Optional[date] = None
     sale_price: Optional[float] = None
     purchase_date: Optional[date] = None
     sale_date: Optional[date] = None
@@ -399,11 +434,78 @@ def get_session():
 
 def init_db():
     SQLModel.metadata.create_all(engine)
+    _ensure_vehicle_status_schema()
     with Session(engine) as session:
         existing = session.exec(select(Branch)).all()
         if not existing:
             session.add_all([Branch(name="Montgat"), Branch(name="Juneda")])
             session.commit()
+        _seed_initial_status_events(session)
+
+
+def _ensure_vehicle_status_schema() -> None:
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(vehicle);").fetchall()}
+        if "status" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehicle ADD COLUMN status TEXT;")
+        if "status_changed_at" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehicle ADD COLUMN status_changed_at DATETIME;")
+        if "status_reason" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehicle ADD COLUMN status_reason TEXT;")
+        if "sold_at" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehicle ADD COLUMN sold_at DATE;")
+        if "reserved_until" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehicle ADD COLUMN reserved_until DATE;")
+        mapping = {
+            "pendiente recepcion": "intake",
+            "en revision": "prep",
+            "en exposicion": "published",
+            "reservado": "reserved",
+            "vendido": "sold",
+            "descartado": "discarded",
+            "devuelto": "discarded",
+        }
+        for old_value, new_value in mapping.items():
+            conn.exec_driver_sql(
+                "UPDATE vehicle SET status = ? WHERE status = ?;",
+                (new_value, old_value),
+            )
+        conn.exec_driver_sql(
+            "UPDATE vehicle SET status = 'intake' "
+            "WHERE status IS NULL OR status = '' "
+            "OR status NOT IN ('intake','prep','ready','published','reserved','sold','discarded');"
+        )
+        conn.exec_driver_sql(
+            "UPDATE vehicle SET status_changed_at = COALESCE(status_changed_at, created_at, ?);",
+            (datetime.utcnow().isoformat(),),
+        )
+        conn.exec_driver_sql(
+            "UPDATE vehicle SET sold_at = sale_date "
+            "WHERE status = 'sold' AND sold_at IS NULL AND sale_date IS NOT NULL;"
+        )
+
+
+def _seed_initial_status_events(session: Session) -> None:
+    existing_vehicle_ids = {
+        row[0] for row in session.exec(select(VehicleStatusEvent.vehicle_id)).all()
+    }
+    vehicles = session.exec(select(Vehicle)).all()
+    for vehicle in vehicles:
+        if vehicle.license_plate in existing_vehicle_ids:
+            continue
+        session.add(
+            VehicleStatusEvent(
+                vehicle_id=vehicle.license_plate,
+                from_status=vehicle.status,
+                to_status=vehicle.status,
+                changed_at=vehicle.status_changed_at or vehicle.created_at,
+                note="Inicial",
+                actor="system",
+            )
+        )
+    session.commit()
 
 
 @app.on_event("startup")
@@ -430,15 +532,34 @@ def create_vehicle(vehicle_data: VehicleCreate, session: Session = Depends(get_s
         if session.get(Vehicle, data["license_plate"]):
             raise HTTPException(status_code=409, detail="La matricula ya existe")
         # Convertir string de fecha a date
-        if isinstance(data.get('purchase_date'), str):
-            data['purchase_date'] = datetime.fromisoformat(data['purchase_date']).date()
-        if isinstance(data.get('sale_date'), str):
-            data['sale_date'] = datetime.fromisoformat(data['sale_date']).date()
-        
+        if isinstance(data.get("purchase_date"), str):
+            data["purchase_date"] = datetime.fromisoformat(data["purchase_date"]).date()
+        if isinstance(data.get("sale_date"), str):
+            data["sale_date"] = datetime.fromisoformat(data["sale_date"]).date()
+        if isinstance(data.get("reserved_until"), str):
+            data["reserved_until"] = datetime.fromisoformat(data["reserved_until"]).date()
+        if isinstance(data.get("sold_at"), str):
+            data["sold_at"] = datetime.fromisoformat(data["sold_at"]).date()
+        if not data.get("status"):
+            data["status"] = VehicleStatus.INTAKE
+        data["status_changed_at"] = datetime.utcnow()
+
         vehicle = Vehicle(**data)
         vehicle.created_at = datetime.utcnow()
         vehicle.updated_at = datetime.utcnow()
         session.add(vehicle)
+        session.commit()
+        session.refresh(vehicle)
+        session.add(
+            VehicleStatusEvent(
+                vehicle_id=vehicle.license_plate,
+                from_status=vehicle.status,
+                to_status=vehicle.status,
+                changed_at=vehicle.status_changed_at,
+                note="Inicial",
+                actor="system",
+            )
+        )
         session.commit()
         session.refresh(vehicle)
         return vehicle
@@ -490,6 +611,8 @@ def update_vehicle(license_plate: str, data: VehicleUpdate, session: Session = D
     update_data = data.model_dump(exclude_unset=True)
     if "license_plate" in update_data and normalize_plate(update_data["license_plate"]) != normalized_plate:
         raise HTTPException(status_code=422, detail="La matricula no se puede modificar")
+    if any(key in update_data for key in ("status", "status_reason", "reserved_until", "sold_at")):
+        raise HTTPException(status_code=422, detail="Usa el endpoint /status para cambios de estado")
     update_data.pop("license_plate", None)
     update_data.pop("created_at", None)
     for key, value in update_data.items():
@@ -508,7 +631,20 @@ def delete_vehicle(license_plate: str, session: Session = Depends(get_session)):
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
 
-    for model in (VehicleExpense, Expense, Sale, SaleDocument, VehicleFile, VehicleLink, VehicleVisit, VehicleEvent, Transfer, Document, Photo):
+    for model in (
+        VehicleExpense,
+        Expense,
+        Sale,
+        SaleDocument,
+        VehicleFile,
+        VehicleLink,
+        VehicleVisit,
+        VehicleEvent,
+        VehicleStatusEvent,
+        Transfer,
+        Document,
+        Photo,
+    ):
         records = session.exec(select(model).where(model.vehicle_id == normalized_plate)).all()
         for record in records:
             session.delete(record)
@@ -528,7 +664,24 @@ def update_vehicle_status(
     payload: VehicleStatusChange,
     session: Session = Depends(get_session),
 ):
-    return change_status(session, normalize_plate(license_plate), payload.status, note=payload.note)
+    return change_status(
+        session,
+        normalize_plate(license_plate),
+        payload.to_status,
+        note=payload.note,
+        actor="local_user",
+        reserved_until=payload.reserved_until,
+        sold_at=payload.sold_at,
+    )
+
+
+@app.get("/vehicles/{license_plate}/status/events")
+def get_vehicle_status_events(
+    license_plate: str,
+    limit: int = Query(50, ge=1, le=200),
+    session: Session = Depends(get_session),
+):
+    return list_status_events(session, normalize_plate(license_plate), limit=limit)
 
 
 @app.get("/vehicles/{license_plate}/timeline", response_model=List[VehicleTimelineItem])
@@ -609,11 +762,16 @@ def register_sale(license_plate: str, sale: SaleCreate, session: Session = Depen
     sale_record = Sale(vehicle_id=normalized_plate, **sale.model_dump())
     vehicle.sale_price = sale_record.sale_price
     vehicle.sale_date = sale_record.sale_date
-    vehicle.status = VehicleStatus.SOLD
-    vehicle.updated_at = datetime.utcnow()
     session.add(sale_record)
     session.add(vehicle)
-    session.commit()
+    change_status(
+        session,
+        normalized_plate,
+        VehicleStatus.SOLD,
+        note="Venta registrada",
+        actor="system",
+        sold_at=sale_record.sale_date,
+    )
     session.refresh(sale_record)
     return sale_record
 
@@ -633,9 +791,21 @@ def update_sale(license_plate: str, payload: SaleUpdate, session: Session = Depe
         if vehicle:
             vehicle.sale_price = sale_record.sale_price
             vehicle.sale_date = sale_record.sale_date
-            vehicle.status = VehicleStatus.SOLD
-            vehicle.updated_at = datetime.utcnow()
             session.add(vehicle)
+            if vehicle.status != VehicleStatus.SOLD:
+                change_status(
+                    session,
+                    normalized_plate,
+                    VehicleStatus.SOLD,
+                    note="Venta actualizada",
+                    actor="system",
+                    sold_at=sale_record.sale_date,
+                )
+            elif sale_record.sale_date and not vehicle.sold_at:
+                vehicle.sold_at = sale_record.sale_date
+                vehicle.updated_at = datetime.utcnow()
+                session.add(vehicle)
+                session.commit()
     session.commit()
     session.refresh(sale_record)
     return sale_record

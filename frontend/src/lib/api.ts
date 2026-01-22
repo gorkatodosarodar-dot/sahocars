@@ -12,7 +12,12 @@ export type Vehicle = {
   km?: number | null;
   color?: string | null;
   location_id?: number | null;
-  state?: string | null;
+  status?: VehicleStatus | null;
+  status_changed_at?: string | null;
+  status_reason?: string | null;
+  reserved_until?: string | null;
+  sold_at?: string | null;
+  state?: VehicleStatus | null;
   sale_price?: number | null;
   purchase_date?: string | null;
   sale_date?: string | null;
@@ -64,17 +69,19 @@ export type VehicleVisitCreateInput = {
 };
 
 export type VehicleStatus =
-  | "pendiente recepcion"
-  | "en revision"
-  | "en exposicion"
-  | "reservado"
-  | "vendido"
-  | "descartado"
-  | "devuelto";
+  | "intake"
+  | "prep"
+  | "ready"
+  | "published"
+  | "reserved"
+  | "sold"
+  | "discarded";
 
 export type ChangeStatusInput = {
-  status: VehicleStatus;
+  to_status: VehicleStatus;
   note?: string | null;
+  reserved_until?: string | null;
+  sold_at?: string | null;
 };
 
 export type VehicleKpis = {
@@ -145,6 +152,16 @@ export type VehicleEvent = {
   created_at: string;
   summary: string;
   payload: Record<string, unknown>;
+};
+
+export type VehicleStatusEvent = {
+  id: number;
+  vehicle_id: string;
+  from_status: VehicleStatus;
+  to_status: VehicleStatus;
+  changed_at: string;
+  note?: string | null;
+  actor?: string | null;
 };
 
 export type Expense = {
@@ -269,10 +286,12 @@ async function fetchJson<T>(path: string, options: RequestInit = {}): Promise<T>
 }
 
 function mapVehicle(vehicle: any): Vehicle {
+  const status = (vehicle.status ?? vehicle.state ?? "intake") as VehicleStatus;
   return {
     ...vehicle,
     location_id: vehicle.branch_id ?? vehicle.location_id,
-    state: vehicle.status ?? vehicle.state,
+    status,
+    state: status,
   };
 }
 
@@ -309,9 +328,9 @@ export const api = {
     const qs = search.toString();
     return fetchJson<DashboardSummary>(`/dashboard${qs ? `?${qs}` : ""}`);
   },
-  listVehicles: (params: { state?: string; branchId?: number; from?: string; to?: string }) => {
+  listVehicles: (params: { status?: VehicleStatus; branchId?: number; from?: string; to?: string }) => {
     const search = new URLSearchParams();
-    if (params.state) search.append("state", params.state);
+    if (params.status) search.append("state", params.status);
     if (params.branchId) search.append("branch_id", String(params.branchId));
     if (params.from) search.append("from_date", params.from);
     if (params.to) search.append("to_date", params.to);
@@ -331,7 +350,7 @@ export const api = {
       version: payload.version?.trim() || null,
       color: payload.color?.trim() || null,
       branch_id: payload.location_id,
-      status: payload.state || "pendiente recepcion",
+      status: payload.status || payload.state || "intake",
       purchase_date: payload.purchase_date || today,
       sale_price: payload.sale_price || null,
       sale_date: payload.sale_date || null,
@@ -355,7 +374,6 @@ export const api = {
       version: payload.version,
       color: payload.color,
       branch_id: payload.location_id,
-      status: payload.state,
       purchase_date: payload.purchase_date,
       sale_price: payload.sale_price,
       sale_date: payload.sale_date,
@@ -447,6 +465,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }).then(mapVehicle),
+  listVehicleStatusEvents: (licensePlate: string, params?: { limit?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.limit) search.append("limit", String(params.limit));
+    const qs = search.toString();
+    return fetchJson<VehicleStatusEvent[]>(
+      `/vehicles/${encodePlate(licensePlate)}/status/events${qs ? `?${qs}` : ""}`
+    );
+  },
   registerVehicleSale: (licensePlate: string, payload: SaleCreateInput) =>
     fetchJson<Sale>(`/vehicles/${encodePlate(licensePlate)}/sale`, {
       method: "POST",
@@ -603,12 +629,12 @@ export function formatDate(value?: string | null) {
   return new Intl.DateTimeFormat("es-ES").format(new Date(value));
 }
 
-export const vehicleStates = [
-  "pendiente recepcion",
-  "en revision",
-  "en exposicion",
-  "reservado",
-  "vendido",
-  "descartado",
-  "devuelto",
+export const vehicleStates: VehicleStatus[] = [
+  "intake",
+  "prep",
+  "ready",
+  "published",
+  "reserved",
+  "sold",
+  "discarded",
 ];

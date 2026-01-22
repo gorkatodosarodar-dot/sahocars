@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, Branch, formatCurrency, formatDate, vehicleStates, Vehicle } from "../lib/api";
+import { api, Branch, formatCurrency, formatDate, vehicleStates, Vehicle, VehicleStatus } from "../lib/api";
 import {
   Button,
   Card,
@@ -16,7 +16,7 @@ import {
 import { DateInput } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
 
-const INITIAL_FORM: Vehicle = { license_plate: "", state: "pendiente recepcion" };
+const INITIAL_FORM: Vehicle = { license_plate: "", status: "intake" };
 
 export default function VehiclesPage() {
   const navigate = useNavigate();
@@ -24,8 +24,18 @@ export default function VehiclesPage() {
   const [branches, setBranches] = useState<Branch[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [filters, setFilters] = useState<{ state?: string; branchId?: number; from?: string; to?: string }>({});
+  const [filters, setFilters] = useState<{ status?: VehicleStatus; branchId?: number; from?: string; to?: string }>({});
   const [form, setForm] = useState<Vehicle>(INITIAL_FORM);
+
+  const statusLabels: Record<VehicleStatus, string> = {
+    intake: "Entrada",
+    prep: "Preparacion",
+    ready: "Listo",
+    published: "Publicado",
+    reserved: "Reservado",
+    sold: "Vendido",
+    discarded: "Descartado",
+  };
 
   const fetchVehicles = () => {
     setLoading(true);
@@ -87,7 +97,9 @@ export default function VehiclesPage() {
           <Table.Td>{vehicle.license_plate || "-"}</Table.Td>
           <Table.Td>{vehicle.brand || "-"}</Table.Td>
           <Table.Td>{vehicle.model || "-"}</Table.Td>
-          <Table.Td>{vehicle.state || "-"}</Table.Td>
+          <Table.Td>
+            {vehicle.status ? statusLabels[vehicle.status] : vehicle.state || "-"}
+          </Table.Td>
           <Table.Td>{vehicle.location_id ? branches.find((b) => b.id === vehicle.location_id)?.name : "-"}</Table.Td>
           <Table.Td>{formatCurrency(vehicle.sale_price)}</Table.Td>
           <Table.Td>{formatDate(vehicle.sale_date)}</Table.Td>
@@ -128,10 +140,12 @@ export default function VehiclesPage() {
           <Select
             label="Estado"
             placeholder="Todos"
-            data={vehicleStates.map((state) => ({ value: state, label: state }))}
-            value={filters.state || null}
+            data={vehicleStates.map((state) => ({ value: state, label: statusLabels[state] }))}
+            value={filters.status || null}
             clearable
-            onChange={(value) => setFilters((prev) => ({ ...prev, state: value || undefined }))}
+            onChange={(value) =>
+              setFilters((prev) => ({ ...prev, status: (value as VehicleStatus) || undefined }))
+            }
           />
           <Select
             label="Sucursal"
@@ -175,9 +189,9 @@ export default function VehiclesPage() {
           />
           <Select
             label="Estado"
-            data={vehicleStates.map((state) => ({ value: state, label: state }))}
-            value={form.state || "pendiente recepcion"}
-            onChange={(value) => setForm((prev) => ({ ...prev, state: value || undefined }))}
+            data={vehicleStates.map((state) => ({ value: state, label: statusLabels[state] }))}
+            value={form.status || "intake"}
+            onChange={(value) => setForm((prev) => ({ ...prev, status: value as VehicleStatus }))}
           />
         </SimpleGrid>
         <Group justify="flex-end" mt="md">

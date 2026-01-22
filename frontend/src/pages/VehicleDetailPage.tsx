@@ -16,6 +16,7 @@ import {
   ExpenseUpdateInput,
   VehicleStatus,
   ChangeStatusInput,
+  VehicleStatusEvent,
   VehicleVisit,
   VehicleVisitCreateInput,
   VehicleKpis,
@@ -42,6 +43,7 @@ export default function VehicleDetailPage() {
   const [kpis, setKpis] = useState<VehicleKpis | null>(null);
   const [timeline, setTimeline] = useState<VehicleEvent[]>([]);
   const [timelineType, setTimelineType] = useState<VehicleEventType | null>(null);
+  const [statusEvents, setStatusEvents] = useState<VehicleStatusEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [newLinkTitle, setNewLinkTitle] = useState("");
   const [newLinkUrl, setNewLinkUrl] = useState("");
@@ -73,6 +75,8 @@ export default function VehicleDetailPage() {
   const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [statusValue, setStatusValue] = useState<VehicleStatus | null>(null);
   const [statusNote, setStatusNote] = useState("");
+  const [statusReservedUntil, setStatusReservedUntil] = useState<Date | null>(null);
+  const [statusSoldAt, setStatusSoldAt] = useState<Date | null>(null);
   const [savingStatus, setSavingStatus] = useState(false);
   const [visitModalOpen, setVisitModalOpen] = useState(false);
   const [visitDate, setVisitDate] = useState<Date | null>(null);
@@ -133,23 +137,33 @@ export default function VehicleDetailPage() {
   };
 
   const statusLabels: Record<VehicleStatus, string> = {
-    "pendiente recepcion": "En stock",
-    "en revision": "En preparacion",
-    "en exposicion": "En exposicion",
-    reservado: "Reservado",
-    vendido: "Vendido",
-    descartado: "Descartado",
-    devuelto: "Devuelto",
+    intake: "Entrada",
+    prep: "Preparacion",
+    ready: "Listo",
+    published: "Publicado",
+    reserved: "Reservado",
+    sold: "Vendido",
+    discarded: "Descartado",
   };
 
   const statusColors: Record<VehicleStatus, string> = {
-    "pendiente recepcion": "gray",
-    "en revision": "yellow",
-    "en exposicion": "blue",
-    reservado: "orange",
-    vendido: "green",
-    descartado: "red",
-    devuelto: "violet",
+    intake: "gray",
+    prep: "yellow",
+    ready: "teal",
+    published: "blue",
+    reserved: "orange",
+    sold: "green",
+    discarded: "red",
+  };
+
+  const statusTransitions: Record<VehicleStatus, VehicleStatus[]> = {
+    intake: ["prep", "ready", "discarded"],
+    prep: ["ready", "discarded"],
+    ready: ["published", "discarded"],
+    published: ["reserved", "sold", "discarded", "ready"],
+    reserved: ["sold", "published", "discarded"],
+    sold: [],
+    discarded: [],
   };
 
   const timelineTypeOptions: { value: VehicleEventType; label: string }[] = [
@@ -168,6 +182,13 @@ export default function VehicleDetailPage() {
     const kb = bytes / 1024;
     if (kb < 1024) return `${kb.toFixed(1)} KB`;
     return `${(kb / 1024).toFixed(1)} MB`;
+  };
+
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return "-";
+    return new Intl.DateTimeFormat("es-ES", { dateStyle: "short", timeStyle: "short" }).format(
+      new Date(value)
+    );
   };
 
   const refreshFiles = async (licensePlateValue: string) => {
@@ -238,6 +259,19 @@ export default function VehicleDetailPage() {
       notifications.show({
         title: "Error",
         message: error instanceof Error ? error.message : "Error al cargar timeline",
+        color: "red",
+      });
+    }
+  };
+
+  const refreshStatusEvents = async (licensePlateValue: string) => {
+    try {
+      const data = await api.listVehicleStatusEvents(licensePlateValue, { limit: 50 });
+      setStatusEvents(data);
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al cargar historial de estado",
         color: "red",
       });
     }
@@ -316,6 +350,7 @@ export default function VehicleDetailPage() {
           visitsData,
           kpisData,
           timelineData,
+          statusEventsData,
           saleData,
         ] = await Promise.all([
           api.getVehicle(licensePlate),
@@ -325,6 +360,7 @@ export default function VehicleDetailPage() {
           api.listVehicleVisits(licensePlate),
           api.getVehicleKpis(licensePlate),
           api.getVehicleTimeline(licensePlate),
+          api.listVehicleStatusEvents(licensePlate),
           api.getVehicleSale(licensePlate).catch(() => null),
         ]);
         setVehicle(vehicleData);
@@ -334,7 +370,12 @@ export default function VehicleDetailPage() {
         setVisits(visitsData);
         setKpis(kpisData);
         setTimeline(timelineData);
-        setStatusValue(vehicleData.state as VehicleStatus | null);
+        setStatusEvents(statusEventsData);
+        setStatusValue((vehicleData.status ?? vehicleData.state ?? "intake") as VehicleStatus);
+        setStatusReservedUntil(
+          vehicleData.reserved_until ? new Date(vehicleData.reserved_until) : null
+        );
+        setStatusSoldAt(vehicleData.sold_at ? new Date(vehicleData.sold_at) : null);
         setVehicleKm(vehicleData.km ?? null);
         setVehicleColor(vehicleData.color ?? "");
         setVehicleLicensePlate(vehicleData.license_plate ?? "");
@@ -410,6 +451,8 @@ export default function VehicleDetailPage() {
   const branchName = vehicle.location_id
     ? branches.find((b) => b.id === vehicle.location_id)?.name
     : "-";
+  const currentStatus = (vehicle.status ?? vehicle.state ?? "intake") as VehicleStatus;
+  const statusOptions = statusTransitions[currentStatus] || [];
 
   const handleCreateLink = async () => {
     if (!licensePlate) return;
@@ -665,10 +708,10 @@ export default function VehicleDetailPage() {
       const saleRecord = saleId
         ? await api.updateVehicleSale(licensePlate ?? "", payload)
         : await api.registerVehicleSale(licensePlate ?? "", payload);
-      if (saleRecord) {
-        setSaleId(saleRecord.id ?? null);
-        setSalePrice(saleRecord.sale_price);
-        setSaleDate(saleRecord.sale_date ? new Date(saleRecord.sale_date) : null);
+        if (saleRecord) {
+          setSaleId(saleRecord.id ?? null);
+          setSalePrice(saleRecord.sale_price);
+          setSaleDate(saleRecord.sale_date ? new Date(saleRecord.sale_date) : null);
         setSaleNotes(saleRecord.notes || "");
         setSaleClientName(saleRecord.client_name || "");
         setSaleClientTaxId(saleRecord.client_tax_id || "");
@@ -679,6 +722,8 @@ export default function VehicleDetailPage() {
           const updatedVehicle = await api.getVehicle(licensePlate ?? "");
           setVehicle(updatedVehicle);
         }
+        await refreshTimeline(licensePlate ?? "", timelineType);
+        await refreshStatusEvents(licensePlate ?? "");
       }
       notifications.show({
         title: "Exito",
@@ -852,8 +897,10 @@ export default function VehicleDetailPage() {
   };
 
   const handleOpenStatusModal = () => {
-    setStatusValue(vehicle?.state as VehicleStatus | null);
+    setStatusValue(statusOptions[0] ?? null);
     setStatusNote("");
+    setStatusReservedUntil(null);
+    setStatusSoldAt(null);
     setStatusModalOpen(true);
   };
 
@@ -866,17 +913,36 @@ export default function VehicleDetailPage() {
       });
       return;
     }
+    if (statusValue === "sold" && !statusSoldAt) {
+      notifications.show({
+        title: "Error",
+        message: "Indica la fecha de venta",
+        color: "red",
+      });
+      return;
+    }
     const payload: ChangeStatusInput = {
-      status: statusValue,
+      to_status: statusValue,
       note: statusNote.trim() || undefined,
+      reserved_until:
+        statusValue === "reserved" && statusReservedUntil
+          ? statusReservedUntil.toISOString().split("T")[0]
+          : undefined,
+      sold_at:
+        statusValue === "sold" && statusSoldAt
+          ? statusSoldAt.toISOString().split("T")[0]
+          : undefined,
     };
     try {
       setSavingStatus(true);
       const updated = await api.changeVehicleStatus(licensePlate ?? "", payload);
       setVehicle(updated);
-      setStatusValue(updated.state as VehicleStatus | null);
+      setStatusValue(updated.status ?? updated.state ?? null);
+      setStatusReservedUntil(updated.reserved_until ? new Date(updated.reserved_until) : null);
+      setStatusSoldAt(updated.sold_at ? new Date(updated.sold_at) : null);
       setStatusModalOpen(false);
       await refreshTimeline(licensePlate ?? "", timelineType);
+      await refreshStatusEvents(licensePlate ?? "");
     } catch (error) {
       notifications.show({
         title: "Error",
@@ -1055,13 +1121,16 @@ export default function VehicleDetailPage() {
               <Group justify="space-between" align="center">
                 <Group gap="sm">
                   <Text fw={500}>Estado</Text>
-                  {vehicle?.state && (
-                    <Badge color={statusColors[vehicle.state as VehicleStatus] || "gray"} variant="light">
-                      {statusLabels[vehicle.state as VehicleStatus] || vehicle.state}
-                    </Badge>
-                  )}
+                  <Badge color={statusColors[currentStatus] || "gray"} variant="light">
+                    {statusLabels[currentStatus] || currentStatus}
+                  </Badge>
                 </Group>
-                <Button variant="light" onClick={handleOpenStatusModal}>
+                <Button
+                  variant="light"
+                  onClick={handleOpenStatusModal}
+                  leftSection={<IconPencil size={18} />}
+                  disabled={statusOptions.length === 0}
+                >
                   Cambiar estado
                 </Button>
               </Group>
@@ -1783,6 +1852,39 @@ export default function VehicleDetailPage() {
           <Stack gap="lg">
             <Card withBorder shadow="xs" radius="md">
               <Group justify="space-between" mb="md">
+                <Title order={3}>Historial de estado</Title>
+              </Group>
+
+              {statusEvents.length === 0 ? (
+                <Text c="dimmed" size="sm">
+                  Sin cambios de estado registrados
+                </Text>
+              ) : (
+                <Stack gap="xs">
+                  {statusEvents.map((event) => (
+                    <Card key={event.id} withBorder shadow="xs" radius="sm">
+                      <Group justify="space-between">
+                        <Stack gap={2}>
+                          <Text fw={500}>
+                            {statusLabels[event.from_status]} → {statusLabels[event.to_status]}
+                          </Text>
+                          {event.note && (
+                            <Text size="xs" c="dimmed">
+                              {event.note}
+                            </Text>
+                          )}
+                        </Stack>
+                        <Text size="sm" c="dimmed">
+                          {formatDateTime(event.changed_at)}
+                        </Text>
+                      </Group>
+                    </Card>
+                  ))}
+                </Stack>
+              )}
+            </Card>
+            <Card withBorder shadow="xs" radius="md">
+              <Group justify="space-between" mb="md">
                 <Title order={3}>Timeline</Title>
                 <Select
                   placeholder="Todos"
@@ -1831,18 +1933,45 @@ export default function VehicleDetailPage() {
         <Stack gap="sm">
           <Select
             label="Estado"
-            data={Object.entries(statusLabels).map(([value, label]) => ({
+            data={statusOptions.map((value) => ({
               value,
-              label,
+              label: statusLabels[value],
             }))}
             value={statusValue}
-            onChange={(value) => setStatusValue(value ? (value as VehicleStatus) : null)}
+            onChange={(value) => {
+              const nextValue = value ? (value as VehicleStatus) : null;
+              setStatusValue(nextValue);
+              if (nextValue !== "reserved") {
+                setStatusReservedUntil(null);
+              }
+              if (nextValue !== "sold") {
+                setStatusSoldAt(null);
+              }
+            }}
+            placeholder={statusOptions.length === 0 ? "Sin transiciones disponibles" : undefined}
+            disabled={statusOptions.length === 0}
           />
           <TextInput
             label="Nota"
             value={statusNote}
             onChange={(e) => setStatusNote(e.currentTarget.value)}
           />
+          {statusValue === "reserved" && (
+            <DateInput
+              label="Reserva hasta"
+              value={statusReservedUntil}
+              onChange={(value) => setStatusReservedUntil(value)}
+              clearable
+            />
+          )}
+          {statusValue === "sold" && (
+            <DateInput
+              label="Fecha de venta"
+              value={statusSoldAt}
+              onChange={(value) => setStatusSoldAt(value)}
+              required
+            />
+          )}
           <Group justify="flex-end" mt="sm">
             <Button variant="light" onClick={() => setStatusModalOpen(false)}>
               Cancelar
