@@ -7,6 +7,7 @@ import VehicleDetailPage from "./pages/VehicleDetailPage";
 import BranchesPage from "./pages/BranchesPage";
 import ReportsPage from "./pages/ReportsPage";
 import logo from "./assets/sahocars-logo.svg";
+import { APP_BRANCH, APP_COMMIT, APP_VERSION } from "./lib/buildInfo";
 
 const navItems = [
   { label: "Dashboard", icon: IconDashboard, to: "/" },
@@ -22,6 +23,7 @@ export default function App() {
     <AppShell
       className="app-shell-root"
       header={{ height: 88 }}
+      footer={{ height: 40 }}
       padding="md"
     >
       <AppShell.Header>
@@ -73,6 +75,18 @@ export default function App() {
           </Routes>
         </div>
       </AppShell.Main>
+      <AppShell.Footer>
+        <div className="page-container">
+          <Group h="100%" justify="space-between">
+            <Text size="xs" c="dimmed">
+              Version {APP_VERSION}
+            </Text>
+            <Text size="xs" c="dimmed">
+              {APP_BRANCH} · {APP_COMMIT}
+            </Text>
+          </Group>
+        </div>
+      </AppShell.Footer>
     </AppShell>
   );
 }

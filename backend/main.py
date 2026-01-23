@@ -27,6 +27,7 @@ from services.vehicle_visits_service import create_visit, delete_visit, list_vis
 from routers.admin_backup import router as admin_backup_router
 from routers.admin_vehicle_transfer import router as admin_vehicle_transfer_router
 from routers.reports import router as reports_router
+from app.version import __version__
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
 STORAGE_ROOT = Path(os.getenv("STORAGE_ROOT", "storage")).resolve()
@@ -455,7 +456,7 @@ class SaleUpdate(SQLModel):
 
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if DATABASE_URL.startswith("sqlite") else create_engine(DATABASE_URL)
-app = FastAPI(title="Sahocars API", version="0.1.0")
+app = FastAPI(title="Sahocars API", version="1.72")
 
 # Configurar CORS
 app.add_middleware(
@@ -469,6 +470,11 @@ app.add_middleware(
 app.include_router(admin_backup_router)
 app.include_router(admin_vehicle_transfer_router)
 app.include_router(reports_router)
+
+
+@app.get("/version")
+def get_version():
+    return {"version": __version__}
 
 
 def get_session():
