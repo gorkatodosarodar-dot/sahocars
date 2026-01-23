@@ -226,6 +226,59 @@ export type DashboardSummary = {
   margin: number;
 };
 
+export type ReportFilters = {
+  from?: string;
+  to?: string;
+  branch_id?: number;
+  status?: VehicleStatus;
+  vehicle_id?: string;
+};
+
+export type ReportKpis = {
+  filters: {
+    from?: string | null;
+    to?: string | null;
+    branch_id?: number | null;
+    status?: VehicleStatus | null;
+    vehicle_id?: string | null;
+  };
+  vehicles_total: number;
+  vehicles_sold: number;
+  vehicles_published: number;
+  vehicles_in_stock: number;
+  total_income: number;
+  total_purchase: number;
+  total_expenses: number;
+  total_profit: number;
+  avg_profit_per_sold: number | null;
+  avg_margin_pct: number | null;
+  avg_days_to_sell: number | null;
+  avg_days_in_stock: number | null;
+};
+
+export type ReportVehicleRow = {
+  vehicle_id: string;
+  title: string;
+  branch_id?: number | null;
+  branch?: string | null;
+  status: VehicleStatus | string;
+  purchase_price: number;
+  total_expenses: number;
+  sale_price?: number | null;
+  sold_at?: string | null;
+  profit?: number | null;
+  margin_pct?: number | null;
+  days_in_stock?: number | null;
+};
+
+export type ReportByBranchItem = {
+  branch_id: number;
+  branch_name: string;
+  sold: number;
+  income: number;
+  profit: number;
+};
+
 export type BackupInfo = {
   id: string;
   filename: string;
@@ -309,6 +362,17 @@ function encodePlate(licensePlate: string) {
   return encodeURIComponent(licensePlate);
 }
 
+function buildReportQuery(filters: ReportFilters) {
+  const search = new URLSearchParams();
+  if (filters.from) search.append("from", filters.from);
+  if (filters.to) search.append("to", filters.to);
+  if (filters.branch_id) search.append("branch_id", String(filters.branch_id));
+  if (filters.status) search.append("status", filters.status);
+  if (filters.vehicle_id) search.append("vehicle_id", filters.vehicle_id);
+  const qs = search.toString();
+  return qs ? `?${qs}` : "";
+}
+
 function buildError(status: number, statusText: string, detail: string) {
   return new Error(detail || `Error ${status}: ${statusText}`);
 }
@@ -338,6 +402,12 @@ export const api = {
     const qs = search.toString();
     return fetchJson<DashboardSummary>(`/dashboard${qs ? `?${qs}` : ""}`);
   },
+  getReportKpis: (filters: ReportFilters) =>
+    fetchJson<ReportKpis>(`/reports/kpis${buildReportQuery(filters)}`),
+  getReportVehicles: (filters: ReportFilters) =>
+    fetchJson<ReportVehicleRow[]>(`/reports/vehicles${buildReportQuery(filters)}`),
+  getReportByBranch: (filters: ReportFilters) =>
+    fetchJson<ReportByBranchItem[]>(`/reports/by-branch${buildReportQuery(filters)}`),
   listVehicles: (params: { status?: VehicleStatus; branchId?: number; from?: string; to?: string }) => {
     const search = new URLSearchParams();
     if (params.status) search.append("state", params.status);

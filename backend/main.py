@@ -26,6 +26,7 @@ from services.vehicle_status_service import change_status, list_status_events
 from services.vehicle_visits_service import create_visit, delete_visit, list_visits
 from routers.admin_backup import router as admin_backup_router
 from routers.admin_vehicle_transfer import router as admin_vehicle_transfer_router
+from routers.reports import router as reports_router
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
 STORAGE_ROOT = Path(os.getenv("STORAGE_ROOT", "storage")).resolve()
@@ -461,6 +462,7 @@ app.add_middleware(
 
 app.include_router(admin_backup_router)
 app.include_router(admin_vehicle_transfer_router)
+app.include_router(reports_router)
 
 
 def get_session():

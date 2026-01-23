@@ -1,16 +1,18 @@
 import { AppShell, Button, Group, Image, Stack, Text } from "@mantine/core";
-import { IconDashboard, IconCar, IconMapPins } from "@tabler/icons-react";
+import { IconDashboard, IconCar, IconMapPins, IconChartBar } from "@tabler/icons-react";
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import DashboardPage from "./pages/DashboardPage";
 import VehiclesPage from "./pages/VehiclesPage";
 import VehicleDetailPage from "./pages/VehicleDetailPage";
 import BranchesPage from "./pages/BranchesPage";
+import ReportsPage from "./pages/ReportsPage";
 import logo from "./assets/sahocars-logo.svg";
 
 const navItems = [
   { label: "Dashboard", icon: IconDashboard, to: "/" },
   { label: "Vehículos", icon: IconCar, to: "/vehiculos" },
   { label: "Sucursales", icon: IconMapPins, to: "/sucursales" },
+  { label: "Informes", icon: IconChartBar, to: "/informes" },
 ];
 
 export default function App() {
@@ -67,6 +69,7 @@ export default function App() {
             <Route path="/vehiculos" element={<VehiclesPage />} />
             <Route path="/vehiculos/:licensePlate" element={<VehicleDetailPage />} />
             <Route path="/sucursales" element={<BranchesPage />} />
+            <Route path="/informes" element={<ReportsPage />} />
           </Routes>
         </div>
       </AppShell.Main>
