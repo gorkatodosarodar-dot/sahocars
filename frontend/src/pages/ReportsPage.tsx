@@ -309,6 +309,8 @@ export default function ReportsPage() {
               <Table.Th>Vendidos</Table.Th>
               <Table.Th>Ingresos</Table.Th>
               <Table.Th>Beneficio</Table.Th>
+              <Table.Th>En stock</Table.Th>
+              <Table.Th>Dias stock</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -318,6 +320,12 @@ export default function ReportsPage() {
                 <Table.Td>{item.sold}</Table.Td>
                 <Table.Td>{formatCurrency(item.income)}</Table.Td>
                 <Table.Td>{formatCurrency(item.profit)}</Table.Td>
+                <Table.Td>{item.vehicles_in_stock ?? 0}</Table.Td>
+                <Table.Td>
+                  {item.avg_days_in_stock !== null && item.avg_days_in_stock !== undefined
+                    ? item.avg_days_in_stock.toFixed(1)
+                    : "-"}
+                </Table.Td>
               </Table.Tr>
             ))}
           </Table.Tbody>

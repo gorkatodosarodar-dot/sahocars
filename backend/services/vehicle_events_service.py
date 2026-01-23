@@ -71,4 +71,8 @@ def _summary(event_type, payload: dict) -> str:
         return "Nota eliminada"
     if event_value == "VEHICLE_UPDATED":
         return "Vehiculo actualizado"
+    if event_value == "BRANCH_MOVED":
+        from_branch = payload.get("from_branch_name") or payload.get("from_branch_id") or "-"
+        to_branch = payload.get("to_branch_name") or payload.get("to_branch_id") or "-"
+        return f"Sucursal cambiada de {from_branch} a {to_branch}"
     return "Evento"

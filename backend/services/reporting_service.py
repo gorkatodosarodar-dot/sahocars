@@ -300,26 +300,68 @@ def breakdown_by_branch(session: Session, filters: dict[str, Any]) -> list[dict[
         .group_by(sold_sub.c.branch_id)
     )
 
-    branch_map = {
-        branch.id: branch.name
-        for branch in session.exec(select(Branch)).all()
-    }
+    stock_rows: list[tuple] = []
+    if status is None or status not in (VehicleStatus.SOLD, VehicleStatus.DISCARDED):
+        stock_stmt = (
+            select(
+                Vehicle.branch_id,
+                func.count(Vehicle.license_plate).label("vehicles_in_stock"),
+                func.avg(
+                    func.julianday(func.current_date())
+                    - func.julianday(func.coalesce(Vehicle.purchase_date, func.date(Vehicle.created_at)))
+                ).label("avg_days_in_stock"),
+            )
+            .where(Vehicle.status.not_in((VehicleStatus.SOLD, VehicleStatus.DISCARDED)))
+            .group_by(Vehicle.branch_id)
+        )
+        if branch_id is not None:
+            stock_stmt = stock_stmt.where(Vehicle.branch_id == branch_id)
+        if status is not None:
+            stock_stmt = stock_stmt.where(Vehicle.status == status)
+        if vehicle_id:
+            stock_stmt = stock_stmt.where(Vehicle.license_plate == vehicle_id)
+        stock_rows = session.exec(stock_stmt).all()
 
-    results = []
+    branch_map = {branch.id: branch.name for branch in session.exec(select(Branch)).all()}
+
+    sold_map: dict[int, dict[str, Any]] = {}
     for branch_id_value, sold, income, purchase_total, other_total in session.exec(stmt).all():
+        if branch_id_value is None:
+            continue
         income_value = float(income or 0)
         purchase_value = float(purchase_total or 0)
         other_value = float(other_total or 0)
-        results.append(
+        sold_map[int(branch_id_value)] = {
+            "branch_id": int(branch_id_value),
+            "branch_name": branch_map.get(branch_id_value, ""),
+            "sold": int(sold or 0),
+            "income": income_value,
+            "profit": income_value - purchase_value - other_value,
+            "vehicles_in_stock": 0,
+            "avg_days_in_stock": None,
+        }
+
+    for branch_id_value, vehicles_in_stock, avg_days_in_stock in stock_rows:
+        if branch_id_value is None:
+            continue
+        branch_id_value = int(branch_id_value)
+        entry = sold_map.get(
+            branch_id_value,
             {
                 "branch_id": branch_id_value,
                 "branch_name": branch_map.get(branch_id_value, ""),
-                "sold": int(sold or 0),
-                "income": income_value,
-                "profit": income_value - purchase_value - other_value,
-            }
+                "sold": 0,
+                "income": 0.0,
+                "profit": 0.0,
+                "vehicles_in_stock": 0,
+                "avg_days_in_stock": None,
+            },
         )
-    return results
+        entry["vehicles_in_stock"] = int(vehicles_in_stock or 0)
+        entry["avg_days_in_stock"] = float(avg_days_in_stock) if avg_days_in_stock is not None else None
+        sold_map[branch_id_value] = entry
+
+    return sorted(sold_map.values(), key=lambda item: item["branch_name"])
 
 
 def _coerce_status(status: str | None):

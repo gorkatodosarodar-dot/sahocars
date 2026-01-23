@@ -12,6 +12,7 @@ export type Vehicle = {
   km?: number | null;
   color?: string | null;
   location_id?: number | null;
+  branch_id?: number | null;
   status?: VehicleStatus | null;
   status_changed_at?: string | null;
   status_reason?: string | null;
@@ -154,7 +155,8 @@ export type VehicleEventType =
   | "FILE_DELETED"
   | "NOTE_CREATED"
   | "NOTE_DELETED"
-  | "VEHICLE_UPDATED";
+  | "VEHICLE_UPDATED"
+  | "BRANCH_MOVED";
 
 export type VehicleEvent = {
   id: number;
@@ -277,6 +279,8 @@ export type ReportByBranchItem = {
   sold: number;
   income: number;
   profit: number;
+  vehicles_in_stock: number;
+  avg_days_in_stock?: number | null;
 };
 
 export type BackupInfo = {
@@ -352,6 +356,7 @@ function mapVehicle(vehicle: any): Vehicle {
   const status = (vehicle.status ?? vehicle.state ?? "intake") as VehicleStatus;
   return {
     ...vehicle,
+    branch_id: vehicle.branch_id ?? vehicle.location_id ?? null,
     location_id: vehicle.branch_id ?? vehicle.location_id,
     status,
     state: status,
@@ -429,7 +434,7 @@ export const api = {
       km: payload.km || 0,
       version: payload.version?.trim() || null,
       color: payload.color?.trim() || null,
-      branch_id: payload.location_id,
+      branch_id: payload.branch_id ?? payload.location_id,
       status: payload.status || payload.state || "intake",
       purchase_date: payload.purchase_date || today,
       sale_price: payload.sale_price || null,
@@ -553,6 +558,11 @@ export const api = {
       `/vehicles/${encodePlate(licensePlate)}/status/events${qs ? `?${qs}` : ""}`
     );
   },
+  moveVehicleBranch: (licensePlate: string, payload: { to_branch_id: number; note?: string }) =>
+    fetchJson<Vehicle>(`/vehicles/${encodePlate(licensePlate)}/move-branch`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }).then(mapVehicle),
   closeVehicleSale: (licensePlate: string, payload: SaleCloseInput) =>
     fetchJson<Vehicle>(`/vehicles/${encodePlate(licensePlate)}/sale`, {
       method: "POST",

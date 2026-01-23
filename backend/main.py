@@ -12,7 +12,7 @@ from typing import List, Optional
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import Column, Enum as SAEnum, JSON
+from sqlalchemy import Column, Enum as SAEnum, JSON, update
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from services.vehicle_expenses_service import (
     create_expense as create_vehicle_expense_service,
@@ -60,7 +60,7 @@ class Vehicle(SQLModel, table=True):
     year: Optional[int] = None
     km: Optional[int] = None
     color: Optional[str] = None
-    branch_id: Optional[int] = Field(default=None, foreign_key="branch.id")
+    branch_id: int = Field(foreign_key="branch.id")
     status: VehicleStatus = Field(
         default=VehicleStatus.INTAKE,
         sa_column=Column(
@@ -205,6 +205,7 @@ class VehicleEventType(str, Enum):
     NOTE_CREATED = "NOTE_CREATED"
     NOTE_DELETED = "NOTE_DELETED"
     VEHICLE_UPDATED = "VEHICLE_UPDATED"
+    BRANCH_MOVED = "BRANCH_MOVED"
 
 
 class VehicleEvent(SQLModel, table=True):
@@ -264,6 +265,11 @@ class VehicleDetailOut(SQLModel):
     total_expenses: float
     profit: Optional[float] = None
     margin_pct: Optional[float] = None
+
+
+class VehicleMoveBranchRequest(SQLModel):
+    to_branch_id: int
+    note: Optional[str] = None
 
 
 class VehicleVisitCreate(SQLModel):
@@ -473,11 +479,19 @@ def get_session():
 def init_db():
     SQLModel.metadata.create_all(engine)
     _ensure_vehicle_status_schema()
+    _ensure_vehicle_branch_schema()
     with Session(engine) as session:
         existing = session.exec(select(Branch)).all()
         if not existing:
             session.add_all([Branch(name="Montgat"), Branch(name="Juneda")])
             session.commit()
+        default_branch_id = _get_default_branch_id(session)
+        if default_branch_id is None:
+            session.add(Branch(name="Principal"))
+            session.commit()
+            default_branch_id = _get_default_branch_id(session)
+        if default_branch_id is not None:
+            _ensure_branch_assignments(session, default_branch_id)
         _seed_initial_status_events(session)
 
 
@@ -525,6 +539,28 @@ def _ensure_vehicle_status_schema() -> None:
             "UPDATE vehicle SET sold_at = sale_date "
             "WHERE status = 'sold' AND sold_at IS NULL AND sale_date IS NOT NULL;"
         )
+
+
+def _ensure_vehicle_branch_schema() -> None:
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(vehicle);").fetchall()}
+        if "branch_id" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehicle ADD COLUMN branch_id INTEGER;")
+
+
+def _get_default_branch_id(session: Session) -> Optional[int]:
+    return session.exec(select(Branch.id).order_by(Branch.id)).first()
+
+
+def _ensure_branch_assignments(session: Session, default_branch_id: int) -> None:
+    session.exec(
+        update(Vehicle)
+        .where(Vehicle.branch_id.is_(None))
+        .values(branch_id=default_branch_id, updated_at=datetime.utcnow())
+    )
+    session.commit()
 
 
 def _seed_initial_status_events(session: Session) -> None:
@@ -667,11 +703,12 @@ def update_vehicle(license_plate: str, data: VehicleUpdate, session: Session = D
             "sale_price",
             "sale_date",
             "sale_notes",
+            "branch_id",
         )
     ):
         raise HTTPException(
             status_code=422,
-            detail="Usa los endpoints /status o /sale para cambios de estado y venta",
+            detail="Usa los endpoints /status, /sale o /move-branch para cambios de estado, venta o sucursal",
         )
     update_data.pop("license_plate", None)
     update_data.pop("created_at", None)
@@ -733,6 +770,50 @@ def update_vehicle_status(
         reserved_until=payload.reserved_until,
         sold_at=payload.sold_at,
     )
+
+
+@app.post("/vehicles/{license_plate}/move-branch", response_model=Vehicle)
+def move_vehicle_branch(
+    license_plate: str,
+    payload: VehicleMoveBranchRequest,
+    session: Session = Depends(get_session),
+):
+    normalized_plate = normalize_plate(license_plate)
+    vehicle = session.get(Vehicle, normalized_plate)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+
+    target_branch = session.get(Branch, payload.to_branch_id)
+    if not target_branch:
+        raise HTTPException(status_code=404, detail="Sucursal no encontrada")
+
+    if vehicle.branch_id == payload.to_branch_id:
+        raise HTTPException(status_code=400, detail="El vehiculo ya esta en esa sucursal")
+
+    from_branch_id = vehicle.branch_id
+    from_branch = session.get(Branch, from_branch_id) if from_branch_id is not None else None
+    vehicle.branch_id = payload.to_branch_id
+    vehicle.updated_at = datetime.utcnow()
+    session.add(vehicle)
+    session.commit()
+    session.refresh(vehicle)
+
+    emit_event(
+        session,
+        normalized_plate,
+        VehicleEventType.BRANCH_MOVED,
+        {
+            "from_branch_id": from_branch_id,
+            "to_branch_id": payload.to_branch_id,
+            "from_branch_name": from_branch.name if from_branch else None,
+            "to_branch_name": target_branch.name,
+            "note": payload.note,
+        },
+        actor="local_user",
+    )
+    session.refresh(vehicle)
+
+    return vehicle
 
 
 @app.get("/vehicles/{license_plate}/status/events")

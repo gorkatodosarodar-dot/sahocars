@@ -43,6 +43,9 @@ export default function VehicleDetailPage() {
   const [kpis, setKpis] = useState<VehicleKpis | null>(null);
   const [timeline, setTimeline] = useState<VehicleEvent[]>([]);
   const [timelineType, setTimelineType] = useState<VehicleEventType | null>(null);
+  const [moveBranchId, setMoveBranchId] = useState<string | null>(null);
+  const [moveBranchNote, setMoveBranchNote] = useState("");
+  const [movingBranch, setMovingBranch] = useState(false);
   const [statusEvents, setStatusEvents] = useState<VehicleStatusEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [newLinkTitle, setNewLinkTitle] = useState("");
@@ -169,6 +172,7 @@ export default function VehicleDetailPage() {
     { value: "VISIT_DELETED", label: "Visita eliminada" },
     { value: "FILE_UPLOADED", label: "Archivo subido" },
     { value: "FILE_DELETED", label: "Archivo eliminado" },
+    { value: "BRANCH_MOVED", label: "Cambio de sucursal" },
   ];
 
   const formatFileSize = (bytes: number) => {
@@ -389,6 +393,13 @@ export default function VehicleDetailPage() {
             : null
         );
         setSaleNotes(vehicleData.sale_notes ?? saleData?.notes ?? "");
+        setMoveBranchId(
+          vehicleData.branch_id
+            ? String(vehicleData.branch_id)
+            : vehicleData.location_id
+            ? String(vehicleData.location_id)
+            : null
+        );
         await Promise.all([
           refreshFiles(licensePlate),
           refreshPhotos(licensePlate),
@@ -437,9 +448,8 @@ export default function VehicleDetailPage() {
     );
   }
 
-  const branchName = vehicle.location_id
-    ? branches.find((b) => b.id === vehicle.location_id)?.name
-    : "-";
+  const currentBranchId = vehicle.branch_id ?? vehicle.location_id ?? null;
+  const branchName = currentBranchId ? branches.find((b) => b.id === currentBranchId)?.name : "-";
   const currentStatus = (vehicle.status ?? vehicle.state ?? "intake") as VehicleStatus;
   const statusOptions = statusTransitions[currentStatus] || [];
 
@@ -642,6 +652,52 @@ export default function VehicleDetailPage() {
       });
     } finally {
       setSavingVehicleDetails(false);
+    }
+  };
+
+  const handleMoveBranch = async () => {
+    if (!licensePlate) return;
+    if (!moveBranchId) {
+      notifications.show({
+        title: "Error",
+        message: "Selecciona una sucursal",
+        color: "red",
+      });
+      return;
+    }
+    const targetId = Number(moveBranchId);
+    const currentId = vehicle?.branch_id ?? vehicle?.location_id ?? null;
+    if (currentId === targetId) {
+      notifications.show({
+        title: "Sin cambios",
+        message: "El vehiculo ya esta en esa sucursal",
+        color: "yellow",
+      });
+      return;
+    }
+    try {
+      setMovingBranch(true);
+      const updated = await api.moveVehicleBranch(licensePlate, {
+        to_branch_id: targetId,
+        note: moveBranchNote.trim() || undefined,
+      });
+      setVehicle(updated);
+      setMoveBranchId(updated.branch_id ? String(updated.branch_id) : String(targetId));
+      setMoveBranchNote("");
+      await refreshTimeline(licensePlate, timelineType);
+      notifications.show({
+        title: "Sucursal actualizada",
+        message: "El vehiculo se movio correctamente",
+        color: "green",
+      });
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al mover el vehiculo",
+        color: "red",
+      });
+    } finally {
+      setMovingBranch(false);
     }
   };
 
@@ -1164,7 +1220,7 @@ export default function VehicleDetailPage() {
                   />
                 </Group>
                 <Group grow align="flex-start">
-                  <TextInput label="Ubicacion" value={branchName} readOnly />
+                  <TextInput label="Sucursal" value={branchName} readOnly />
                   <TextInput
                     label="Notas"
                     value={vehicleNotes}
@@ -1179,6 +1235,43 @@ export default function VehicleDetailPage() {
                 <Group justify="flex-end">
                   <Button variant="light" onClick={handleSaveVehicleDetails} loading={savingVehicleDetails}>
                     Guardar cambios
+                  </Button>
+                </Group>
+              </Stack>
+            </Card>
+
+            <Card withBorder shadow="xs" radius="md">
+              <Title order={3} mb="md">
+                Sucursal
+              </Title>
+              <Stack gap="md">
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Sucursal actual
+                  </Text>
+                  <Badge variant="light" color="blue">
+                    {branchName}
+                  </Badge>
+                </Group>
+                <Group grow align="flex-end">
+                  <Select
+                    label="Mover a"
+                    placeholder="Selecciona sucursal"
+                    data={branches.map((branch) => ({ value: String(branch.id), label: branch.name }))}
+                    value={moveBranchId}
+                    onChange={setMoveBranchId}
+                    searchable
+                  />
+                  <TextInput
+                    label="Nota"
+                    placeholder="Traslado a exposicion"
+                    value={moveBranchNote}
+                    onChange={(e) => setMoveBranchNote(e.currentTarget.value)}
+                  />
+                </Group>
+                <Group justify="flex-end">
+                  <Button variant="light" onClick={handleMoveBranch} loading={movingBranch}>
+                    Mover sucursal
                   </Button>
                 </Group>
               </Stack>
