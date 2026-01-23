@@ -21,7 +21,7 @@ from services.vehicle_expenses_service import (
     update_expense as update_vehicle_expense_service,
 )
 from services.vehicle_events_service import emit_event, list_timeline
-from services.vehicle_finance_service import get_vehicle_kpis
+from services.vehicle_finance_service import compute_vehicle_financials, get_vehicle_kpis
 from services.vehicle_status_service import change_status, list_status_events
 from services.vehicle_visits_service import create_visit, delete_visit, list_visits
 from routers.admin_backup import router as admin_backup_router
@@ -71,6 +71,7 @@ class Vehicle(SQLModel, table=True):
     sold_at: Optional[date] = None
     reserved_until: Optional[date] = None
     sale_price: Optional[float] = None
+    sale_notes: Optional[str] = None
     purchase_date: Optional[date] = None
     sale_date: Optional[date] = None
     notes: Optional[str] = None
@@ -237,6 +238,33 @@ class VehicleLinkCreate(SQLModel):
     url: str
 
 
+class VehicleDetailOut(SQLModel):
+    vin: Optional[str] = None
+    license_plate: str
+    brand: Optional[str] = None
+    model: Optional[str] = None
+    version: Optional[str] = None
+    year: Optional[int] = None
+    km: Optional[int] = None
+    color: Optional[str] = None
+    branch_id: Optional[int] = None
+    status: VehicleStatus
+    status_changed_at: datetime
+    status_reason: Optional[str] = None
+    sold_at: Optional[date] = None
+    reserved_until: Optional[date] = None
+    sale_price: Optional[float] = None
+    sale_notes: Optional[str] = None
+    purchase_date: Optional[date] = None
+    sale_date: Optional[date] = None
+    notes: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    total_expenses: float
+    profit: Optional[float] = None
+    margin_pct: Optional[float] = None
+
+
 class VehicleVisitCreate(SQLModel):
     visit_date: date
     name: str
@@ -299,6 +327,7 @@ class VehicleCreate(SQLModel):
     status_reason: Optional[str] = None
     sold_at: Optional[date] = None
     reserved_until: Optional[date] = None
+    sale_notes: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -316,6 +345,7 @@ class VehicleUpdate(SQLModel):
     status_reason: Optional[str] = None
     sold_at: Optional[date] = None
     reserved_until: Optional[date] = None
+    sale_notes: Optional[str] = None
     sale_price: Optional[float] = None
     purchase_date: Optional[date] = None
     sale_date: Optional[date] = None
@@ -389,6 +419,12 @@ class VehicleExpenseOut(SQLModel):
         from_attributes = True
 
 
+class SaleCloseRequest(SQLModel):
+    sale_price: float
+    sold_at: date
+    sale_notes: Optional[str] = None
+
+
 class SaleCreate(SQLModel):
     sale_price: float
     sale_date: date
@@ -458,6 +494,8 @@ def _ensure_vehicle_status_schema() -> None:
             conn.exec_driver_sql("ALTER TABLE vehicle ADD COLUMN sold_at DATE;")
         if "reserved_until" not in columns:
             conn.exec_driver_sql("ALTER TABLE vehicle ADD COLUMN reserved_until DATE;")
+        if "sale_notes" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehicle ADD COLUMN sale_notes TEXT;")
         mapping = {
             "pendiente recepcion": "intake",
             "en revision": "prep",
@@ -594,12 +632,18 @@ def list_vehicles(
         raise HTTPException(status_code=500, detail=f"Error al listar vehículos: {str(e)}")
 
 
-@app.get("/vehicles/{license_plate}", response_model=Vehicle)
+def _build_vehicle_detail(session: Session, vehicle: Vehicle) -> dict:
+    payload = vehicle.model_dump()
+    payload.update(compute_vehicle_financials(session, vehicle.license_plate))
+    return payload
+
+
+@app.get("/vehicles/{license_plate}", response_model=VehicleDetailOut)
 def get_vehicle(license_plate: str, session: Session = Depends(get_session)):
     vehicle = session.get(Vehicle, normalize_plate(license_plate))
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    return vehicle
+    return _build_vehicle_detail(session, vehicle)
 
 
 @app.patch("/vehicles/{license_plate}", response_model=Vehicle)
@@ -611,8 +655,22 @@ def update_vehicle(license_plate: str, data: VehicleUpdate, session: Session = D
     update_data = data.model_dump(exclude_unset=True)
     if "license_plate" in update_data and normalize_plate(update_data["license_plate"]) != normalized_plate:
         raise HTTPException(status_code=422, detail="La matricula no se puede modificar")
-    if any(key in update_data for key in ("status", "status_reason", "reserved_until", "sold_at")):
-        raise HTTPException(status_code=422, detail="Usa el endpoint /status para cambios de estado")
+    if any(
+        key in update_data
+        for key in (
+            "status",
+            "status_reason",
+            "reserved_until",
+            "sold_at",
+            "sale_price",
+            "sale_date",
+            "sale_notes",
+        )
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Usa los endpoints /status o /sale para cambios de estado y venta",
+        )
     update_data.pop("license_plate", None)
     update_data.pop("created_at", None)
     for key, value in update_data.items():
@@ -753,27 +811,53 @@ def get_sale(license_plate: str, session: Session = Depends(get_session)):
     return sale
 
 
-@app.post("/vehicles/{license_plate}/sale", response_model=Sale)
-def register_sale(license_plate: str, sale: SaleCreate, session: Session = Depends(get_session)):
+@app.post("/vehicles/{license_plate}/sale", response_model=VehicleDetailOut)
+def register_sale(license_plate: str, sale: SaleCloseRequest, session: Session = Depends(get_session)):
     normalized_plate = normalize_plate(license_plate)
+    if sale.sale_price <= 0:
+        raise HTTPException(status_code=400, detail="sale_price debe ser mayor que 0")
     vehicle = session.get(Vehicle, normalized_plate)
     if not vehicle:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
-    sale_record = Sale(vehicle_id=normalized_plate, **sale.model_dump())
-    vehicle.sale_price = sale_record.sale_price
-    vehicle.sale_date = sale_record.sale_date
-    session.add(sale_record)
+    if vehicle.status == VehicleStatus.DISCARDED:
+        raise HTTPException(status_code=400, detail="No se puede vender un vehiculo descartado")
+
+    if vehicle.status != VehicleStatus.SOLD:
+        change_status(
+            session,
+            normalized_plate,
+            VehicleStatus.SOLD,
+            note="Venta cerrada",
+            actor="local_user",
+            sold_at=sale.sold_at,
+        )
+        vehicle = session.get(Vehicle, normalized_plate)
+
+    vehicle.sale_price = sale.sale_price
+    vehicle.sold_at = sale.sold_at
+    vehicle.sale_date = sale.sold_at
+    vehicle.sale_notes = sale.sale_notes
+    vehicle.updated_at = datetime.utcnow()
     session.add(vehicle)
-    change_status(
-        session,
-        normalized_plate,
-        VehicleStatus.SOLD,
-        note="Venta registrada",
-        actor="system",
-        sold_at=sale_record.sale_date,
-    )
-    session.refresh(sale_record)
-    return sale_record
+
+    sale_record = session.exec(select(Sale).where(Sale.vehicle_id == normalized_plate)).first()
+    if sale_record:
+        sale_record.sale_price = sale.sale_price
+        sale_record.sale_date = sale.sold_at
+        sale_record.notes = sale.sale_notes
+        session.add(sale_record)
+    else:
+        sale_record = Sale(
+            vehicle_id=normalized_plate,
+            sale_price=sale.sale_price,
+            sale_date=sale.sold_at,
+            notes=sale.sale_notes,
+        )
+        session.add(sale_record)
+
+    session.commit()
+    session.refresh(vehicle)
+    return _build_vehicle_detail(session, vehicle)
 
 
 @app.patch("/vehicles/{license_plate}/sale", response_model=Sale)
@@ -791,6 +875,9 @@ def update_sale(license_plate: str, payload: SaleUpdate, session: Session = Depe
         if vehicle:
             vehicle.sale_price = sale_record.sale_price
             vehicle.sale_date = sale_record.sale_date
+            vehicle.sold_at = vehicle.sold_at or sale_record.sale_date
+            if update_data.get("notes") is not None:
+                vehicle.sale_notes = sale_record.notes
             session.add(vehicle)
             if vehicle.status != VehicleStatus.SOLD:
                 change_status(

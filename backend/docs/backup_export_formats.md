@@ -74,7 +74,7 @@ Manifest fields (`manifest.json`):
   - `file_entries`
 
 Record fields (direct SQLModel dumps; all fields may be present):
-- `vehicles`: `license_plate`, `vin`, `brand`, `model`, `version`, `year`, `km`, `color`, `branch_id`, `status`, `sale_price`, `purchase_date`, `sale_date`, `notes`, `created_at`, `updated_at`
+- `vehicles`: `license_plate`, `vin`, `brand`, `model`, `version`, `year`, `km`, `color`, `branch_id`, `status`, `status_changed_at`, `status_reason`, `sold_at`, `reserved_until`, `purchase_date`, `sale_price`, `sale_notes`, `sale_date`, `notes`, `created_at`, `updated_at`
 - `vehicle_expenses`: `id`, `vehicle_id`, `amount`, `currency`, `date`, `category`, `vendor`, `invoice_ref`, `payment_method`, `notes`, `linked_vehicle_file_id`, `created_at`, `updated_at`
 - `legacy_expenses`: `id`, `vehicle_id`, `concept`, `amount`, `expense_date`, `notes`, `created_at`
 - `vehicle_visits`: `id`, `vehicle_id`, `visit_date`, `name`, `phone`, `email`, `notes`, `created_at`

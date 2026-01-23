@@ -17,6 +17,10 @@ export type Vehicle = {
   status_reason?: string | null;
   reserved_until?: string | null;
   sold_at?: string | null;
+  sale_notes?: string | null;
+  total_expenses?: number | null;
+  profit?: number | null;
+  margin_pct?: number | null;
   state?: VehicleStatus | null;
   sale_price?: number | null;
   purchase_date?: string | null;
@@ -82,6 +86,12 @@ export type ChangeStatusInput = {
   note?: string | null;
   reserved_until?: string | null;
   sold_at?: string | null;
+};
+
+export type SaleCloseInput = {
+  sale_price: number;
+  sold_at: string;
+  sale_notes?: string | null;
 };
 
 export type VehicleKpis = {
@@ -473,11 +483,11 @@ export const api = {
       `/vehicles/${encodePlate(licensePlate)}/status/events${qs ? `?${qs}` : ""}`
     );
   },
-  registerVehicleSale: (licensePlate: string, payload: SaleCreateInput) =>
-    fetchJson<Sale>(`/vehicles/${encodePlate(licensePlate)}/sale`, {
+  closeVehicleSale: (licensePlate: string, payload: SaleCloseInput) =>
+    fetchJson<Vehicle>(`/vehicles/${encodePlate(licensePlate)}/sale`, {
       method: "POST",
       body: JSON.stringify(payload),
-    }),
+    }).then(mapVehicle),
   getVehicleSale: (licensePlate: string) =>
     fetchJson<Sale>(`/vehicles/${encodePlate(licensePlate)}/sale`),
   updateVehicleSale: (licensePlate: string, payload: Partial<SaleCreateInput>) =>

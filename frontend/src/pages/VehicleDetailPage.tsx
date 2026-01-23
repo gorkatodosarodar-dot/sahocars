@@ -22,7 +22,7 @@ import {
   VehicleKpis,
   VehicleEvent,
   VehicleEventType,
-  SaleCreateInput,
+  SaleCloseInput,
   SaleDocument,
   formatCurrency,
   formatDate,
@@ -98,15 +98,9 @@ export default function VehicleDetailPage() {
   const [vehicleNotes, setVehicleNotes] = useState("");
   const [savingVehicleDetails, setSavingVehicleDetails] = useState(false);
   const [deletingVehicle, setDeletingVehicle] = useState(false);
-  const [desiredMarginPercent, setDesiredMarginPercent] = useState<number>(10);
   const [salePrice, setSalePrice] = useState<number | null>(null);
   const [saleDate, setSaleDate] = useState<Date | null>(null);
   const [saleNotes, setSaleNotes] = useState("");
-  const [saleClientName, setSaleClientName] = useState("");
-  const [saleClientTaxId, setSaleClientTaxId] = useState("");
-  const [saleClientPhone, setSaleClientPhone] = useState("");
-  const [saleClientEmail, setSaleClientEmail] = useState("");
-  const [saleClientAddress, setSaleClientAddress] = useState("");
   const [saleId, setSaleId] = useState<number | null>(null);
   const [savingSale, setSavingSale] = useState(false);
   const [saleDocuments, setSaleDocuments] = useState<SaleDocument[]>([]);
@@ -386,20 +380,15 @@ export default function VehicleDetailPage() {
         setVehicleYear(vehicleData.year ?? null);
         setVehicleNotes(vehicleData.notes ?? "");
         setSaleId(saleData?.id ?? null);
-        setSalePrice(saleData?.sale_price ?? vehicleData.sale_price ?? null);
+        setSalePrice(vehicleData.sale_price ?? null);
         setSaleDate(
-          saleData?.sale_date
-            ? new Date(saleData.sale_date)
+          vehicleData.sold_at
+            ? new Date(vehicleData.sold_at)
             : vehicleData.sale_date
             ? new Date(vehicleData.sale_date)
             : null
         );
-        setSaleNotes(saleData?.notes ?? "");
-        setSaleClientName(saleData?.client_name ?? "");
-        setSaleClientTaxId(saleData?.client_tax_id ?? "");
-        setSaleClientPhone(saleData?.client_phone ?? "");
-        setSaleClientEmail(saleData?.client_email ?? "");
-        setSaleClientAddress(saleData?.client_address ?? "");
+        setSaleNotes(vehicleData.sale_notes ?? saleData?.notes ?? "");
         await Promise.all([
           refreshFiles(licensePlate),
           refreshPhotos(licensePlate),
@@ -683,48 +672,35 @@ export default function VehicleDetailPage() {
   };
 
   const handleSaveSale = async () => {
-    if (!licensePlate || salePrice === null || !saleDate) {
+    if (!licensePlate || salePrice === null || salePrice <= 0 || !saleDate) {
       notifications.show({
         title: "Error",
-        message: "Completa fecha e importe de venta",
+        message: "Completa fecha e importe de venta (mayor que 0)",
         color: "red",
       });
       return;
     }
 
-    const payload: SaleCreateInput = {
+    const payload: SaleCloseInput = {
       sale_price: salePrice,
-      sale_date: saleDate.toISOString().split("T")[0],
-      notes: saleNotes.trim() || undefined,
-      client_name: saleClientName.trim() || undefined,
-      client_tax_id: saleClientTaxId.trim() || undefined,
-      client_phone: saleClientPhone.trim() || undefined,
-      client_email: saleClientEmail.trim() || undefined,
-      client_address: saleClientAddress.trim() || undefined,
+      sold_at: saleDate.toISOString().split("T")[0],
+      sale_notes: saleNotes.trim() || undefined,
     };
 
     try {
       setSavingSale(true);
-      const saleRecord = saleId
-        ? await api.updateVehicleSale(licensePlate ?? "", payload)
-        : await api.registerVehicleSale(licensePlate ?? "", payload);
-        if (saleRecord) {
-          setSaleId(saleRecord.id ?? null);
-          setSalePrice(saleRecord.sale_price);
-          setSaleDate(saleRecord.sale_date ? new Date(saleRecord.sale_date) : null);
-        setSaleNotes(saleRecord.notes || "");
-        setSaleClientName(saleRecord.client_name || "");
-        setSaleClientTaxId(saleRecord.client_tax_id || "");
-        setSaleClientPhone(saleRecord.client_phone || "");
-        setSaleClientEmail(saleRecord.client_email || "");
-        setSaleClientAddress(saleRecord.client_address || "");
-        if (id) {
-          const updatedVehicle = await api.getVehicle(licensePlate ?? "");
-          setVehicle(updatedVehicle);
-        }
-        await refreshTimeline(licensePlate ?? "", timelineType);
-        await refreshStatusEvents(licensePlate ?? "");
-      }
+      const updatedVehicle = await api.closeVehicleSale(licensePlate ?? "", payload);
+      setVehicle(updatedVehicle);
+      setSalePrice(updatedVehicle.sale_price ?? null);
+      setSaleDate(updatedVehicle.sold_at ? new Date(updatedVehicle.sold_at) : null);
+      setSaleNotes(updatedVehicle.sale_notes ?? "");
+
+      const saleRecord = await api.getVehicleSale(licensePlate ?? "").catch(() => null);
+      setSaleId(saleRecord?.id ?? null);
+
+      await refreshSaleDocuments(licensePlate ?? "");
+      await refreshTimeline(licensePlate ?? "", timelineType);
+      await refreshStatusEvents(licensePlate ?? "");
       notifications.show({
         title: "Exito",
         message: "Venta guardada correctamente",
@@ -1071,21 +1047,14 @@ export default function VehicleDetailPage() {
     }
     return sum;
   }, 0);
-  const totalExpenses = purchaseTotal + otherExpensesTotal;
-  const desiredMarginRate = (desiredMarginPercent || 0) / 100;
-  const targetSalePrice = totalExpenses > 0 ? totalExpenses * (1 + desiredMarginRate) : null;
-
+  const totalExpenses = vehicle?.total_expenses ?? purchaseTotal + otherExpensesTotal;
   const salePriceValue = salePrice ?? vehicle?.sale_price ?? null;
-  const profitValue = salePriceValue !== null ? salePriceValue - totalExpenses : null;
-  const profitPercent = totalExpenses > 0 && profitValue !== null ? profitValue / totalExpenses : null;
-  const annualProfitPercent = (() => {
-    if (!profitPercent || !vehicle?.purchase_date || !vehicle?.sale_date) return null;
-    const purchase = new Date(vehicle.purchase_date);
-    const sale = new Date(vehicle.sale_date);
-    const days = (sale.getTime() - purchase.getTime()) / (1000 * 60 * 60 * 24);
-    if (days <= 0) return null;
-    return profitPercent * (365 / days);
-  })();
+  const profitValue =
+    vehicle?.profit ?? (salePriceValue !== null ? salePriceValue - totalExpenses : null);
+  const marginPctValue =
+    vehicle?.margin_pct ??
+    (salePriceValue && salePriceValue > 0 && profitValue !== null ? profitValue / salePriceValue : null);
+  const profitColor = profitValue !== null && profitValue < 0 ? "red" : "green";
 
   return (
     <Stack gap="lg">
@@ -1267,22 +1236,21 @@ export default function VehicleDetailPage() {
               </Stack>
             </Card>
 
+          </Stack>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="trabajo" pt="md">
+          <Stack gap="lg">
             <Card withBorder shadow="xs" radius="md">
               <Title order={3} mb="md">
-                Calculo de venta
+                Finanzas
               </Title>
               <Stack gap="xs">
                 <Group justify="space-between">
                   <Text size="sm" c="dimmed">
-                    Coste de compra
+                    Precio de compra
                   </Text>
                   <Text fw={500}>{formatCurrency(purchaseTotal)}</Text>
-                </Group>
-                <Group justify="space-between">
-                  <Text size="sm" c="dimmed">
-                    Otros gastos
-                  </Text>
-                  <Text fw={500}>{formatCurrency(otherExpensesTotal)}</Text>
                 </Group>
                 <Group justify="space-between">
                   <Text size="sm" c="dimmed">
@@ -1290,53 +1258,30 @@ export default function VehicleDetailPage() {
                   </Text>
                   <Text fw={500}>{formatCurrency(totalExpenses)}</Text>
                 </Group>
-                <Group justify="space-between" align="center">
+                <Group justify="space-between">
                   <Text size="sm" c="dimmed">
-                    Beneficio deseado (%)
+                    Precio de venta
                   </Text>
-                  <NumberInput
-                    value={desiredMarginPercent}
-                    onChange={(value) => setDesiredMarginPercent(typeof value === "number" ? value : 0)}
-                    min={0}
-                    max={100}
-                    step={1}
-                    decimalScale={2}
-                    decimalSeparator=","
-                    thousandSeparator="."
-                    w={120}
-                  />
+                  <Text fw={500}>{salePriceValue !== null ? formatCurrency(salePriceValue) : "-"}</Text>
                 </Group>
                 <Group justify="space-between">
                   <Text size="sm" c="dimmed">
-                    Precio objetivo
+                    Beneficio
                   </Text>
-                  <Text fw={500}>{targetSalePrice !== null ? formatCurrency(targetSalePrice) : "-"}</Text>
+                  <Text fw={500} c={profitColor}>
+                    {profitValue !== null ? formatCurrency(profitValue) : "-"}
+                  </Text>
                 </Group>
                 <Group justify="space-between">
                   <Text size="sm" c="dimmed">
-                    Beneficio real
+                    Margen %
                   </Text>
-                  <Text fw={500}>{profitValue !== null ? formatCurrency(profitValue) : "-"}</Text>
-                </Group>
-                <Group justify="space-between">
-                  <Text size="sm" c="dimmed">
-                    % beneficio real
+                  <Text fw={500} c={profitColor}>
+                    {formatPercent(marginPctValue)}
                   </Text>
-                  <Text fw={500}>{formatPercent(profitPercent)}</Text>
-                </Group>
-                <Group justify="space-between">
-                  <Text size="sm" c="dimmed">
-                    % beneficio anual
-                  </Text>
-                  <Text fw={500}>{formatPercent(annualProfitPercent)}</Text>
                 </Group>
               </Stack>
             </Card>
-          </Stack>
-        </Tabs.Panel>
-
-        <Tabs.Panel value="trabajo" pt="md">
-          <Stack gap="lg">
             <Card withBorder shadow="xs" radius="md">
               <Group justify="space-between" mb="md">
                 <Title order={3}>Gastos</Title>
@@ -1730,38 +1675,13 @@ export default function VehicleDetailPage() {
                   required
                 />
                 <TextInput
-                  label="Nombre comprador"
-                  value={saleClientName}
-                  onChange={(e) => setSaleClientName(e.currentTarget.value)}
-                />
-                <TextInput
-                  label="DNI/NIF comprador"
-                  value={saleClientTaxId}
-                  onChange={(e) => setSaleClientTaxId(e.currentTarget.value)}
-                />
-                <TextInput
-                  label="Telefono comprador"
-                  value={saleClientPhone}
-                  onChange={(e) => setSaleClientPhone(e.currentTarget.value)}
-                />
-                <TextInput
-                  label="Email comprador"
-                  value={saleClientEmail}
-                  onChange={(e) => setSaleClientEmail(e.currentTarget.value)}
-                />
-                <TextInput
-                  label="Direccion comprador"
-                  value={saleClientAddress}
-                  onChange={(e) => setSaleClientAddress(e.currentTarget.value)}
-                />
-                <TextInput
                   label="Notas de venta"
                   value={saleNotes}
                   onChange={(e) => setSaleNotes(e.currentTarget.value)}
                 />
                 <Group justify="flex-end">
                   <Button onClick={handleSaveSale} loading={savingSale}>
-                    Guardar venta
+                    {currentStatus === "sold" ? "Actualizar venta" : "Cerrar venta"}
                   </Button>
                 </Group>
               </Stack>

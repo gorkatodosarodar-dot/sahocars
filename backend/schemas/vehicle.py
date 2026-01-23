@@ -23,6 +23,7 @@ class VehicleCreate(SQLModel):
     status_reason: Optional[str] = None
     sold_at: Optional[date] = None
     reserved_until: Optional[date] = None
+    sale_notes: Optional[str] = None
     notes: Optional[str] = None
 
 
@@ -40,11 +41,15 @@ class VehicleRead(SQLModel):
     status_reason: Optional[str] = None
     sold_at: Optional[date] = None
     reserved_until: Optional[date] = None
+    sale_notes: Optional[str] = None
     version: Optional[str] = None
     color: Optional[str] = None
     notes: Optional[str] = None
     sale_price: Optional[float] = None
     sale_date: Optional[date] = None
+    total_expenses: Optional[float] = None
+    profit: Optional[float] = None
+    margin_pct: Optional[float] = None
     created_at: datetime
     updated_at: datetime
 
@@ -66,6 +71,7 @@ class VehicleUpdate(SQLModel):
     status_reason: Optional[str] = None
     sold_at: Optional[date] = None
     reserved_until: Optional[date] = None
+    sale_notes: Optional[str] = None
     notes: Optional[str] = None
     sale_price: Optional[float] = None
     sale_date: Optional[date] = None
