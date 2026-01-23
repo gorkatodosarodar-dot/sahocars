@@ -9,7 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import Column, Enum as SAEnum, JSON, update
@@ -23,10 +23,12 @@ from services.vehicle_expenses_service import (
 from services.vehicle_events_service import emit_event, list_timeline
 from services.vehicle_finance_service import compute_vehicle_financials, get_vehicle_kpis
 from services.vehicle_status_service import change_status, list_status_events
-from services.vehicle_visits_service import create_visit, delete_visit, list_visits
+from services.vehicle_visits_service import create_visit, delete_visit, list_visits, update_visit
+from services.google_calendar_service import create_or_update_event
 from routers.admin_backup import router as admin_backup_router
 from routers.admin_vehicle_transfer import router as admin_vehicle_transfer_router
 from routers.reports import router as reports_router
+from routers.google_auth import router as google_auth_router
 from app.version import __version__
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
@@ -191,7 +193,27 @@ class VehicleVisit(SQLModel, table=True):
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
+    scheduled_at: Optional[datetime] = None
+    duration_minutes: int = 30
+    calendar_event_id: Optional[str] = None
+    calendar_event_html_link: Optional[str] = None
+    calendar_status: Optional[str] = None
+    calendar_last_error: Optional[str] = None
+    calendar_last_synced_at: Optional[datetime] = None
+    timezone: str = "Europe/Madrid"
     created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class GoogleToken(SQLModel, table=True):
+    __tablename__ = "google_tokens"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    access_token: str
+    refresh_token: Optional[str] = None
+    expiry: Optional[datetime] = None
+    scopes: Optional[str] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 class VehicleEventType(str, Enum):
@@ -279,6 +301,20 @@ class VehicleVisitCreate(SQLModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
+    scheduled_at: Optional[datetime] = None
+    duration_minutes: Optional[int] = 30
+    timezone: Optional[str] = "Europe/Madrid"
+
+
+class VehicleVisitUpdate(SQLModel):
+    visit_date: Optional[date] = None
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    notes: Optional[str] = None
+    scheduled_at: Optional[datetime] = None
+    duration_minutes: Optional[int] = None
+    timezone: Optional[str] = None
 
 
 class VehicleVisitOut(SQLModel):
@@ -289,6 +325,14 @@ class VehicleVisitOut(SQLModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     notes: Optional[str] = None
+    scheduled_at: Optional[datetime] = None
+    duration_minutes: Optional[int] = None
+    calendar_event_id: Optional[str] = None
+    calendar_event_html_link: Optional[str] = None
+    calendar_status: Optional[str] = None
+    calendar_last_error: Optional[str] = None
+    calendar_last_synced_at: Optional[datetime] = None
+    timezone: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -456,7 +500,7 @@ class SaleUpdate(SQLModel):
 
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if DATABASE_URL.startswith("sqlite") else create_engine(DATABASE_URL)
-app = FastAPI(title="Sahocars API", version="1.72")
+app = FastAPI(title="Sahocars API", version="1.82")
 
 # Configurar CORS
 app.add_middleware(
@@ -470,6 +514,7 @@ app.add_middleware(
 app.include_router(admin_backup_router)
 app.include_router(admin_vehicle_transfer_router)
 app.include_router(reports_router)
+app.include_router(google_auth_router)
 
 
 @app.get("/version")
@@ -486,6 +531,7 @@ def init_db():
     SQLModel.metadata.create_all(engine)
     _ensure_vehicle_status_schema()
     _ensure_vehicle_branch_schema()
+    _ensure_vehicle_visit_schema()
     with Session(engine) as session:
         existing = session.exec(select(Branch)).all()
         if not existing:
@@ -554,6 +600,29 @@ def _ensure_vehicle_branch_schema() -> None:
         columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(vehicle);").fetchall()}
         if "branch_id" not in columns:
             conn.exec_driver_sql("ALTER TABLE vehicle ADD COLUMN branch_id INTEGER;")
+
+
+def _ensure_vehicle_visit_schema() -> None:
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(vehiclevisit);").fetchall()}
+        if "scheduled_at" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehiclevisit ADD COLUMN scheduled_at DATETIME;")
+        if "duration_minutes" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehiclevisit ADD COLUMN duration_minutes INTEGER;")
+        if "calendar_event_id" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehiclevisit ADD COLUMN calendar_event_id TEXT;")
+        if "calendar_event_html_link" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehiclevisit ADD COLUMN calendar_event_html_link TEXT;")
+        if "calendar_status" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehiclevisit ADD COLUMN calendar_status TEXT;")
+        if "calendar_last_error" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehiclevisit ADD COLUMN calendar_last_error TEXT;")
+        if "calendar_last_synced_at" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehiclevisit ADD COLUMN calendar_last_synced_at DATETIME;")
+        if "timezone" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehiclevisit ADD COLUMN timezone TEXT;")
 
 
 def _get_default_branch_id(session: Session) -> Optional[int]:
@@ -1075,6 +1144,16 @@ def normalize_plate(value: str) -> str:
     return normalized
 
 
+def _require_local_request(request: Request) -> None:
+    allow_remote = os.getenv("SAHOCARS_ADMIN_ALLOW_REMOTE", "false").lower() == "true"
+    if allow_remote:
+        return
+    client = request.client
+    host = client.host if client else ""
+    if host not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="Acceso solo local")
+
+
 def vehicle_storage_key(license_plate: str) -> str:
     normalized = normalize_plate(license_plate)
     safe = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in normalized)
@@ -1365,6 +1444,16 @@ def create_vehicle_visit(
     return create_visit(session, normalize_plate(license_plate), payload)
 
 
+@app.patch("/vehicles/{license_plate}/visits/{visit_id}", response_model=VehicleVisitOut)
+def update_vehicle_visit(
+    license_plate: str,
+    visit_id: int,
+    payload: VehicleVisitUpdate,
+    session: Session = Depends(get_session),
+):
+    return update_visit(session, normalize_plate(license_plate), visit_id, payload)
+
+
 @app.delete("/vehicles/{license_plate}/visits/{visit_id}")
 def delete_vehicle_visit(
     license_plate: str,
@@ -1373,6 +1462,48 @@ def delete_vehicle_visit(
 ):
     delete_visit(session, normalize_plate(license_plate), visit_id)
     return {"status": "ok"}
+
+
+@app.post("/visits/{visit_id}/calendar/sync", response_model=VehicleVisitOut)
+def sync_visit_calendar(
+    visit_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    _require_local_request(request)
+    visit = session.get(VehicleVisit, visit_id)
+    if not visit:
+        raise HTTPException(status_code=404, detail="Visita no encontrada")
+    vehicle = session.get(Vehicle, visit.vehicle_id)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+    branch_name = None
+    if vehicle.branch_id is not None:
+        branch = session.get(Branch, vehicle.branch_id)
+        branch_name = branch.name if branch else None
+
+    now = datetime.utcnow()
+    had_event = bool(visit.calendar_event_id)
+    try:
+        result = create_or_update_event(session, visit, vehicle, branch_name)
+        visit.calendar_event_id = result.get("id")
+        visit.calendar_event_html_link = result.get("htmlLink")
+        visit.calendar_status = "updated" if had_event else "created"
+        visit.calendar_last_error = None
+        visit.calendar_last_synced_at = now
+    except HTTPException as exc:
+        visit.calendar_status = "failed"
+        visit.calendar_last_error = str(exc.detail)
+        visit.calendar_last_synced_at = now
+    except Exception as exc:
+        visit.calendar_status = "failed"
+        visit.calendar_last_error = str(exc)
+        visit.calendar_last_synced_at = now
+
+    session.add(visit)
+    session.commit()
+    session.refresh(visit)
+    return visit
 
 
 @app.get("/vehicles/{license_plate}/kpis", response_model=VehicleKpisOut)

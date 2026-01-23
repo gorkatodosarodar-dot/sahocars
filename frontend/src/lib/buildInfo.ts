@@ -1,3 +1,5 @@
-export const APP_VERSION = "1.72";
-export const APP_BRANCH = "fase-7b-multi-sucursal";
-export const APP_COMMIT = "5b9d087";
+const env = import.meta.env;
+
+export const APP_VERSION = env.VITE_APP_VERSION ?? "1.82";
+export const APP_BRANCH = env.VITE_APP_BRANCH ?? "fase-8b-visitas-agenda-gcal";
+export const APP_COMMIT = env.VITE_APP_COMMIT ?? "dev";

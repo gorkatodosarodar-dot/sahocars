@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Badge, Card, Stack, Text, Title, Button, Grid, Loader, Center, TextInput, Table, Group, ActionIcon, Modal, Select, NumberInput, Tabs } from "@mantine/core";
-import { DateInput } from "@mantine/dates";
-import { IconArrowLeft, IconExternalLink, IconTrash, IconPlus, IconPencil, IconDownload } from "@tabler/icons-react";
+import { DateInput, DateTimePicker } from "@mantine/dates";
+import { IconArrowLeft, IconExternalLink, IconTrash, IconPlus, IconPencil, IconDownload, IconCalendarEvent } from "@tabler/icons-react";
 import {
   api,
   Vehicle,
@@ -83,6 +83,9 @@ export default function VehicleDetailPage() {
   const [savingStatus, setSavingStatus] = useState(false);
   const [visitModalOpen, setVisitModalOpen] = useState(false);
   const [visitDate, setVisitDate] = useState<Date | null>(null);
+  const [visitScheduledAt, setVisitScheduledAt] = useState<Date | null>(null);
+  const [visitDuration, setVisitDuration] = useState<number | null>(30);
+  const [visitTimezone, setVisitTimezone] = useState("Europe/Madrid");
   const [visitName, setVisitName] = useState("");
   const [visitPhone, setVisitPhone] = useState("");
   const [visitEmail, setVisitEmail] = useState("");
@@ -90,6 +93,8 @@ export default function VehicleDetailPage() {
   const [savingVisit, setSavingVisit] = useState(false);
   const [visitToDelete, setVisitToDelete] = useState<VehicleVisit | null>(null);
   const [confirmVisitDeleteOpen, setConfirmVisitDeleteOpen] = useState(false);
+  const [editingVisit, setEditingVisit] = useState<VehicleVisit | null>(null);
+  const [syncingVisitId, setSyncingVisitId] = useState<number | null>(null);
   const [vehicleKm, setVehicleKm] = useState<number | null>(null);
   const [vehicleColor, setVehicleColor] = useState("");
   const [vehicleLicensePlate, setVehicleLicensePlate] = useState("");
@@ -316,10 +321,14 @@ export default function VehicleDetailPage() {
 
   const resetVisitForm = () => {
     setVisitDate(null);
+    setVisitScheduledAt(null);
+    setVisitDuration(30);
+    setVisitTimezone("Europe/Madrid");
     setVisitName("");
     setVisitPhone("");
     setVisitEmail("");
     setVisitNotes("");
+    setEditingVisit(null);
   };
 
   useEffect(() => {
@@ -1007,6 +1016,19 @@ export default function VehicleDetailPage() {
     setVisitModalOpen(true);
   };
 
+  const handleEditVisit = (visit: VehicleVisit) => {
+    setEditingVisit(visit);
+    setVisitDate(visit.visit_date ? new Date(visit.visit_date) : null);
+    setVisitScheduledAt(visit.scheduled_at ? new Date(visit.scheduled_at) : null);
+    setVisitDuration(visit.duration_minutes ?? 30);
+    setVisitTimezone(visit.timezone ?? "Europe/Madrid");
+    setVisitName(visit.name ?? "");
+    setVisitPhone(visit.phone ?? "");
+    setVisitEmail(visit.email ?? "");
+    setVisitNotes(visit.notes ?? "");
+    setVisitModalOpen(true);
+  };
+
   const handleSaveVisit = async () => {
     if (!licensePlate || !visitDate || !visitName.trim()) {
       notifications.show({
@@ -1031,14 +1053,21 @@ export default function VehicleDetailPage() {
       phone: visitPhone.trim() || undefined,
       email: visitEmail.trim() || undefined,
       notes: visitNotes.trim() || undefined,
+      scheduled_at: visitScheduledAt ? visitScheduledAt.toISOString() : undefined,
+      duration_minutes: visitDuration ?? undefined,
+      timezone: visitTimezone.trim() || undefined,
     };
 
     try {
       setSavingVisit(true);
-      await api.createVehicleVisit(licensePlate ?? "", payload);
+      if (editingVisit?.id) {
+        await api.updateVehicleVisit(licensePlate ?? "", editingVisit.id, payload);
+      } else {
+        await api.createVehicleVisit(licensePlate ?? "", payload);
+      }
       notifications.show({
         title: "Exito",
-        message: "Visita creada correctamente",
+        message: editingVisit ? "Visita actualizada correctamente" : "Visita creada correctamente",
         color: "green",
       });
       setVisitModalOpen(false);
@@ -1053,6 +1082,39 @@ export default function VehicleDetailPage() {
       });
     } finally {
       setSavingVisit(false);
+    }
+  };
+
+  const handleSyncVisit = async (visit: VehicleVisit) => {
+    if (!visit.id) return;
+    if (!visit.scheduled_at) {
+      notifications.show({
+        title: "Agenda incompleta",
+        message: "Define fecha y hora prevista para sincronizar",
+        color: "red",
+      });
+      return;
+    }
+    try {
+      setSyncingVisitId(visit.id);
+      const updated = await api.syncVisitCalendar(visit.id);
+      setVisits(visits.map((item) => (item.id === updated.id ? updated : item)));
+      notifications.show({
+        title: "Calendario",
+        message:
+          updated.calendar_status === "failed"
+            ? updated.calendar_last_error || "Error al sincronizar"
+            : "Evento sincronizado correctamente",
+        color: updated.calendar_status === "failed" ? "red" : "green",
+      });
+    } catch (error) {
+      notifications.show({
+        title: "Error",
+        message: error instanceof Error ? error.message : "Error al sincronizar calendario",
+        color: "red",
+      });
+    } finally {
+      setSyncingVisitId(null);
     }
   };
 
@@ -1711,8 +1773,10 @@ export default function VehicleDetailPage() {
                       <Table.Th>Nombre</Table.Th>
                       <Table.Th>Telefono</Table.Th>
                       <Table.Th>Email</Table.Th>
+                      <Table.Th>Agenda</Table.Th>
+                      <Table.Th>Estado</Table.Th>
                       <Table.Th>Observaciones</Table.Th>
-                      <Table.Th w={80} style={{ textAlign: "center" }}>
+                      <Table.Th w={140} style={{ textAlign: "center" }}>
                         Acciones
                       </Table.Th>
                     </Table.Tr>
@@ -1724,16 +1788,55 @@ export default function VehicleDetailPage() {
                         <Table.Td>{visit.name}</Table.Td>
                         <Table.Td>{visit.phone || "-"}</Table.Td>
                         <Table.Td>{visit.email || "-"}</Table.Td>
-                        <Table.Td>{visit.notes || "-"}</Table.Td>
+                        <Table.Td>
+                          {visit.scheduled_at ? formatDateTime(visit.scheduled_at) : "Sin agenda"}
+                          {visit.duration_minutes ? ` (${visit.duration_minutes}m)` : ""}
+                        </Table.Td>
+                        <Table.Td>{visit.calendar_status || "-"}</Table.Td>
+                        <Table.Td>
+                          {visit.notes || "-"}
+                          {visit.calendar_event_html_link && (
+                            <Text
+                              size="xs"
+                              component="a"
+                              href={visit.calendar_event_html_link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: "var(--mantine-color-blue-6)" }}
+                            >
+                              Abrir evento
+                            </Text>
+                          )}
+                        </Table.Td>
                         <Table.Td style={{ textAlign: "center" }}>
-                          <ActionIcon
-                            variant="light"
-                            color="red"
-                            onClick={() => handleConfirmDeleteVisit(visit)}
-                            title="Eliminar visita"
-                          >
-                            <IconTrash size={18} />
-                          </ActionIcon>
+                          <Group gap={6} justify="center">
+                            <ActionIcon
+                              variant="light"
+                              color="blue"
+                              onClick={() => handleEditVisit(visit)}
+                              title="Editar visita"
+                            >
+                              <IconPencil size={18} />
+                            </ActionIcon>
+                            <ActionIcon
+                              variant="light"
+                              color="teal"
+                              onClick={() => handleSyncVisit(visit)}
+                              loading={syncingVisitId === visit.id}
+                              title="Sincronizar con Google Calendar"
+                              disabled={!visit.scheduled_at}
+                            >
+                              <IconCalendarEvent size={18} />
+                            </ActionIcon>
+                            <ActionIcon
+                              variant="light"
+                              color="red"
+                              onClick={() => handleConfirmDeleteVisit(visit)}
+                              title="Eliminar visita"
+                            >
+                              <IconTrash size={18} />
+                            </ActionIcon>
+                          </Group>
                         </Table.Td>
                       </Table.Tr>
                     ))}
@@ -2002,7 +2105,7 @@ export default function VehicleDetailPage() {
           setVisitModalOpen(false);
           resetVisitForm();
         }}
-        title="Nueva visita"
+        title={editingVisit ? "Editar visita" : "Nueva visita"}
         centered
       >
         <Stack gap="sm">
@@ -2012,6 +2115,25 @@ export default function VehicleDetailPage() {
             onChange={(value) => setVisitDate(value)}
             required
           />
+          <DateTimePicker
+            label="Fecha/hora prevista"
+            value={visitScheduledAt}
+            onChange={setVisitScheduledAt}
+            clearable
+          />
+          <Group grow>
+            <NumberInput
+              label="Duracion (min)"
+              value={visitDuration ?? undefined}
+              onChange={(value) => setVisitDuration(typeof value === "number" ? value : null)}
+              min={5}
+            />
+            <TextInput
+              label="Zona horaria"
+              value={visitTimezone}
+              onChange={(e) => setVisitTimezone(e.currentTarget.value)}
+            />
+          </Group>
           <TextInput
             label="Nombre"
             value={visitName}
@@ -2044,7 +2166,7 @@ export default function VehicleDetailPage() {
               Cancelar
             </Button>
             <Button onClick={handleSaveVisit} loading={savingVisit}>
-              Guardar
+              {editingVisit ? "Actualizar" : "Guardar"}
             </Button>
           </Group>
         </Stack>

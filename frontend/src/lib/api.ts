@@ -62,6 +62,14 @@ export type VehicleVisit = {
   phone?: string | null;
   email?: string | null;
   notes?: string | null;
+  scheduled_at?: string | null;
+  duration_minutes?: number | null;
+  calendar_event_id?: string | null;
+  calendar_event_html_link?: string | null;
+  calendar_status?: string | null;
+  calendar_last_error?: string | null;
+  calendar_last_synced_at?: string | null;
+  timezone?: string | null;
   created_at?: string | null;
 };
 
@@ -71,7 +79,12 @@ export type VehicleVisitCreateInput = {
   phone?: string | null;
   email?: string | null;
   notes?: string | null;
+  scheduled_at?: string | null;
+  duration_minutes?: number | null;
+  timezone?: string | null;
 };
+
+export type VehicleVisitUpdateInput = Partial<VehicleVisitCreateInput>;
 
 export type VehicleStatus =
   | "intake"
@@ -226,6 +239,13 @@ export type DashboardSummary = {
   income: number;
   expenses: number;
   margin: number;
+};
+
+export type GoogleCalendarStatus = {
+  connected: boolean;
+  expired?: boolean;
+  scopes?: string[];
+  updated_at?: string | null;
 };
 
 export type ReportFilters = {
@@ -513,6 +533,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  updateVehicleVisit: (licensePlate: string, visitId: number, payload: VehicleVisitUpdateInput) =>
+    fetchJson<VehicleVisit>(`/vehicles/${encodePlate(licensePlate)}/visits/${visitId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   deleteVehicleVisit: async (licensePlate: string, visitId: number) => {
     const response = await fetch(`${API_URL}/vehicles/${encodePlate(licensePlate)}/visits/${visitId}`, {
       method: "DELETE",
@@ -522,6 +547,12 @@ export const api = {
       throw buildError(response.status, response.statusText, detail);
     }
   },
+  syncVisitCalendar: (visitId: number) =>
+    fetchJson<VehicleVisit>(`/visits/${visitId}/calendar/sync`, {
+      method: "POST",
+    }),
+  getGoogleCalendarStatus: () => fetchJson<GoogleCalendarStatus>("/auth/google/status"),
+  getGoogleAuthStartUrl: () => `${API_URL}/auth/google/start`,
   listVehicleExpenses: (licensePlate: string) =>
     fetchJson<VehicleExpense[]>(`/vehicles/${encodePlate(licensePlate)}/expenses`),
   createVehicleExpense: (licensePlate: string, payload: ExpenseCreateInput) =>

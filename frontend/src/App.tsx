@@ -1,11 +1,12 @@
 import { AppShell, Button, Group, Image, Stack, Text } from "@mantine/core";
-import { IconDashboard, IconCar, IconMapPins, IconChartBar } from "@tabler/icons-react";
+import { IconDashboard, IconCar, IconMapPins, IconChartBar, IconPlug } from "@tabler/icons-react";
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import DashboardPage from "./pages/DashboardPage";
 import VehiclesPage from "./pages/VehiclesPage";
 import VehicleDetailPage from "./pages/VehicleDetailPage";
 import BranchesPage from "./pages/BranchesPage";
 import ReportsPage from "./pages/ReportsPage";
+import IntegrationsPage from "./pages/IntegrationsPage";
 import logo from "./assets/sahocars-logo.svg";
 import { APP_BRANCH, APP_COMMIT, APP_VERSION } from "./lib/buildInfo";
 
@@ -14,6 +15,7 @@ const navItems = [
   { label: "Vehículos", icon: IconCar, to: "/vehiculos" },
   { label: "Sucursales", icon: IconMapPins, to: "/sucursales" },
   { label: "Informes", icon: IconChartBar, to: "/informes" },
+  { label: "Integraciones", icon: IconPlug, to: "/settings/integrations" },
 ];
 
 export default function App() {
@@ -72,6 +74,7 @@ export default function App() {
             <Route path="/vehiculos/:licensePlate" element={<VehicleDetailPage />} />
             <Route path="/sucursales" element={<BranchesPage />} />
             <Route path="/informes" element={<ReportsPage />} />
+            <Route path="/settings/integrations" element={<IntegrationsPage />} />
           </Routes>
         </div>
       </AppShell.Main>
@@ -79,10 +82,7 @@ export default function App() {
         <div className="page-container">
           <Group h="100%" justify="space-between">
             <Text size="xs" c="dimmed">
-              Version {APP_VERSION}
-            </Text>
-            <Text size="xs" c="dimmed">
-              {APP_BRANCH} · {APP_COMMIT}
+              Sahocars v{APP_VERSION} · {APP_BRANCH} · {APP_COMMIT}
             </Text>
           </Group>
         </div>
