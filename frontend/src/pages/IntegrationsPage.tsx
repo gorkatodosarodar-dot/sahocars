@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, GoogleCalendarStatus } from "../lib/api";
 import { Button, Card, Group, Stack, Text, Title } from "@mantine/core";
+import { Link } from "react-router-dom";
 import { notifications } from "@mantine/notifications";
 
 export default function IntegrationsPage() {
@@ -52,6 +53,9 @@ export default function IntegrationsPage() {
           <Group>
             <Button variant="light" onClick={loadStatus} loading={loading}>
               Refrescar
+            </Button>
+            <Button variant="subtle" component={Link} to="/settings/integrations/guide">
+              Ver guia
             </Button>
             <Button onClick={handleConnect}>Conectar Google Calendar</Button>
           </Group>

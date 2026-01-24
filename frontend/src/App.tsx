@@ -8,6 +8,7 @@ import VehicleDetailPage from "./pages/VehicleDetailPage";
 import BranchesPage from "./pages/BranchesPage";
 import ReportsPage from "./pages/ReportsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
+import IntegrationsGuidePage from "./pages/IntegrationsGuidePage";
 import logo from "./assets/sahocars-logo.svg";
 import { APP_BRANCH, APP_COMMIT, APP_VERSION } from "./lib/buildInfo";
 import { api } from "./lib/api";
@@ -97,6 +98,7 @@ export default function App() {
             <Route path="/sucursales" element={<BranchesPage />} />
             <Route path="/informes" element={<ReportsPage />} />
             <Route path="/settings/integrations" element={<IntegrationsPage />} />
+            <Route path="/settings/integrations/guide" element={<IntegrationsGuidePage />} />
           </Routes>
         </div>
       </AppShell.Main>
