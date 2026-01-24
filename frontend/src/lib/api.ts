@@ -248,6 +248,12 @@ export type GoogleCalendarStatus = {
   updated_at?: string | null;
 };
 
+export type AppVersionInfo = {
+  version: string;
+  branch?: string | null;
+  commit?: string | null;
+};
+
 export type ReportFilters = {
   from?: string;
   to?: string;
@@ -553,6 +559,7 @@ export const api = {
     }),
   getGoogleCalendarStatus: () => fetchJson<GoogleCalendarStatus>("/auth/google/status"),
   getGoogleAuthStartUrl: () => `${API_URL}/auth/google/start`,
+  getAppVersionInfo: () => fetchJson<AppVersionInfo>("/version/info"),
   listVehicleExpenses: (licensePlate: string) =>
     fetchJson<VehicleExpense[]>(`/vehicles/${encodePlate(licensePlate)}/expenses`),
   createVehicleExpense: (licensePlate: string, payload: ExpenseCreateInput) =>

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { AppShell, Button, Group, Image, Stack, Text } from "@mantine/core";
 import { IconDashboard, IconCar, IconMapPins, IconChartBar, IconPlug } from "@tabler/icons-react";
 import { Link, Route, Routes, useLocation } from "react-router-dom";
@@ -9,6 +10,7 @@ import ReportsPage from "./pages/ReportsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import logo from "./assets/sahocars-logo.svg";
 import { APP_BRANCH, APP_COMMIT, APP_VERSION } from "./lib/buildInfo";
+import { api } from "./lib/api";
 
 const navItems = [
   { label: "Dashboard", icon: IconDashboard, to: "/" },
@@ -20,6 +22,26 @@ const navItems = [
 
 export default function App() {
   const location = useLocation();
+  const [buildInfo, setBuildInfo] = useState({
+    version: APP_VERSION,
+    branch: APP_BRANCH,
+    commit: APP_COMMIT,
+  });
+
+  useEffect(() => {
+    api
+      .getAppVersionInfo()
+      .then((info) => {
+        if (info?.version) {
+          setBuildInfo({
+            version: info.version,
+            branch: info.branch ?? APP_BRANCH,
+            commit: info.commit ?? APP_COMMIT,
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <AppShell
@@ -82,7 +104,7 @@ export default function App() {
         <div className="page-container">
           <Group h="100%" justify="space-between">
             <Text size="xs" c="dimmed">
-              Sahocars v{APP_VERSION} · {APP_BRANCH} · {APP_COMMIT}
+              Sahocars v{buildInfo.version} · {buildInfo.branch} · {buildInfo.commit}
             </Text>
           </Group>
         </div>

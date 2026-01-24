@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from uuid import uuid4
 from datetime import date, datetime
 from decimal import Decimal
@@ -520,6 +521,16 @@ app.include_router(google_auth_router)
 @app.get("/version")
 def get_version():
     return {"version": __version__}
+
+
+@app.get("/version/info")
+def get_version_info():
+    info = _get_git_info()
+    return {
+        "version": __version__,
+        "branch": info.get("branch"),
+        "commit": info.get("commit"),
+    }
 
 
 def get_session():
@@ -1152,6 +1163,30 @@ def _require_local_request(request: Request) -> None:
     host = client.host if client else ""
     if host not in ("127.0.0.1", "::1", "localhost"):
         raise HTTPException(status_code=403, detail="Acceso solo local")
+
+
+def _get_git_info() -> dict[str, str]:
+    default_branch = os.getenv("SAHOCARS_APP_BRANCH", "unknown")
+    default_commit = os.getenv("SAHOCARS_APP_COMMIT", "unknown")
+    repo_root = Path(__file__).resolve().parents[1]
+    try:
+        branch = subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            cwd=repo_root,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=2,
+        ).strip()
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo_root,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=2,
+        ).strip()
+        return {"branch": branch or default_branch, "commit": commit or default_commit}
+    except Exception:
+        return {"branch": default_branch, "commit": default_commit}
 
 
 def vehicle_storage_key(license_plate: str) -> str:
