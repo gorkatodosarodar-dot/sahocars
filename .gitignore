@@ -32,6 +32,8 @@ venv/
 # Accidentally duplicated repos inside repo
 sahocars/
 sahocars-1/
+!release/
+!release/Sahocars/
 
 # Build / cache
 frontend/.vite/
@@ -41,9 +43,13 @@ backend/.pytest_tmp/
 backend/_test_data/
 backend/_test_data2/
 backend/_py_write_test/
+dist_package/
+release/Sahocars/backend/_pytest_tmp/
 
 # Archivos por lotes
 *.bat
 !install.bat
 !start.bat
 !start_sahocars.bat
+!update.bat
+!rollback.bat
