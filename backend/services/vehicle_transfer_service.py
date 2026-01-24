@@ -14,6 +14,8 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from services.backup_service import _get_app_version, _get_schema_version
+from app.config import get_database_url
+from app.paths import get_storage_dir
 
 
 def build_export_package(session: Session, vehicle_ids: list[str], include_files: bool = True) -> bytes:
@@ -642,7 +644,10 @@ def _generate_package_id() -> str:
 
 
 def _resolve_storage_root() -> Path:
-    return Path(os.getenv("STORAGE_ROOT", "storage")).resolve()
+    raw_root = os.getenv("STORAGE_ROOT")
+    if raw_root:
+        return Path(raw_root).resolve()
+    return get_storage_dir()
 
 
 def _remove_dir(path: Path) -> None:
@@ -657,7 +662,7 @@ def _remove_dir(path: Path) -> None:
 
 
 def _database_url() -> str:
-    return os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
+    return get_database_url()
 
 
 def _database_path() -> Path:

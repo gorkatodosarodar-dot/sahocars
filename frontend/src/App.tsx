@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AppShell, Button, Group, Image, Stack, Text } from "@mantine/core";
-import { IconDashboard, IconCar, IconMapPins, IconChartBar, IconPlug } from "@tabler/icons-react";
+import { IconDashboard, IconCar, IconMapPins, IconChartBar, IconPlug, IconFileText } from "@tabler/icons-react";
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import DashboardPage from "./pages/DashboardPage";
 import VehiclesPage from "./pages/VehiclesPage";
@@ -9,6 +9,7 @@ import BranchesPage from "./pages/BranchesPage";
 import ReportsPage from "./pages/ReportsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import IntegrationsGuidePage from "./pages/IntegrationsGuidePage";
+import ReadmePage from "./pages/ReadmePage";
 import logo from "./assets/sahocars-logo.svg";
 import { APP_BRANCH, APP_COMMIT, APP_VERSION } from "./lib/buildInfo";
 import { api } from "./lib/api";
@@ -19,6 +20,7 @@ const navItems = [
   { label: "Sucursales", icon: IconMapPins, to: "/sucursales" },
   { label: "Informes", icon: IconChartBar, to: "/informes" },
   { label: "Integraciones", icon: IconPlug, to: "/settings/integrations" },
+  { label: "README", icon: IconFileText, to: "/readme" },
 ];
 
 export default function App() {
@@ -33,9 +35,9 @@ export default function App() {
     api
       .getAppVersionInfo()
       .then((info) => {
-        if (info?.version) {
+        if (info?.app_version) {
           setBuildInfo({
-            version: info.version,
+            version: info.app_version,
             branch: info.branch ?? APP_BRANCH,
             commit: info.commit ?? APP_COMMIT,
           });
@@ -99,6 +101,7 @@ export default function App() {
             <Route path="/informes" element={<ReportsPage />} />
             <Route path="/settings/integrations" element={<IntegrationsPage />} />
             <Route path="/settings/integrations/guide" element={<IntegrationsGuidePage />} />
+            <Route path="/readme" element={<ReadmePage />} />
           </Routes>
         </div>
       </AppShell.Main>

@@ -39,3 +39,6 @@ frontend/dist/
 
 # Archivos por lotes
 *.bat
+!install.bat
+!start.bat
+!start_sahocars.bat

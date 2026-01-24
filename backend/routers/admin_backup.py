@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, HTTPException
 from sqlmodel import SQLModel
 
+from app.config import get_database_url
 from services.backup_service import create_backup, list_backups, restore_backup, wipe_system
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -26,8 +25,7 @@ class WipeRequest(SQLModel):
 
 @router.post("/backups")
 def create_backup_endpoint(payload: BackupCreateRequest):
-    database_url = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
-    return create_backup(database_url, include_files=payload.include_files)
+    return create_backup(get_database_url(), include_files=payload.include_files)
 
 
 @router.get("/backups")
@@ -37,9 +35,8 @@ def list_backups_endpoint():
 
 @router.post("/backups/{backup_id}/restore")
 def restore_backup_endpoint(backup_id: str, payload: BackupRestoreRequest):
-    database_url = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
     return restore_backup(
-        database_url,
+        get_database_url(),
         backup_id,
         dry_run=payload.dry_run,
         wipe_before_restore=payload.wipe_before_restore,
@@ -51,5 +48,4 @@ def restore_backup_endpoint(backup_id: str, payload: BackupRestoreRequest):
 def wipe_system_endpoint(payload: WipeRequest):
     if not payload.confirm_wipe:
         raise HTTPException(status_code=422, detail="confirm_wipe es requerido para vaciar el sistema")
-    database_url = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
-    return wipe_system(database_url)
+    return wipe_system(get_database_url())

@@ -14,6 +14,9 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 
+from app.config import get_app_version
+from app.paths import get_backups_dir, get_data_dir, get_storage_dir
+
 DEFAULT_BACKUP_DIR = "backups"
 BACKUP_PREFIX = "backup_"
 BACKUP_EXTENSION = ".sqlite"
@@ -34,9 +37,9 @@ def create_backup(
     if _restore_lock.locked() and not allow_during_restore:
         raise HTTPException(status_code=409, detail={"error": "restore_in_progress"})
     backup_dir = _resolve_backup_dir()
-    backend_root = _backend_root()
-    db_path = _resolve_sqlite_path(database_url, backend_root)
-    storage_root = _resolve_storage_root(backend_root)
+    base_dir = get_data_dir()
+    db_path = _resolve_sqlite_path(database_url, base_dir)
+    storage_root = _resolve_storage_root(base_dir)
 
     if not db_path.exists():
         raise HTTPException(status_code=404, detail="Base de datos no encontrada para backup")
@@ -153,9 +156,9 @@ def _restore_backup_locked(
     confirm_wipe: bool = False,
 ) -> dict[str, Any]:
     backup_dir = _resolve_backup_dir()
-    backend_root = _backend_root()
-    db_path = _resolve_sqlite_path(database_url, backend_root)
-    storage_root = _resolve_storage_root(backend_root)
+    base_dir = get_data_dir()
+    db_path = _resolve_sqlite_path(database_url, base_dir)
+    storage_root = _resolve_storage_root(base_dir)
     staging_root = backup_dir / RESTORE_STAGING_DIR / backup_id
     staging_db_path = staging_root / "restored.sqlite"
     staging_storage_path = staging_root / "storage_tmp"
@@ -226,9 +229,9 @@ def _restore_backup_locked(
 
 
 def wipe_system(database_url: str) -> dict[str, Any]:
-    backend_root = _backend_root()
-    db_path = _resolve_sqlite_path(database_url, backend_root)
-    storage_root = _resolve_storage_root(backend_root)
+    base_dir = get_data_dir()
+    db_path = _resolve_sqlite_path(database_url, base_dir)
+    storage_root = _resolve_storage_root(base_dir)
 
     _sqlite_wipe(db_path)
     _wipe_storage(storage_root)
@@ -240,24 +243,24 @@ def wipe_system(database_url: str) -> dict[str, Any]:
 
 
 def _resolve_backup_dir() -> Path:
-    raw_dir = os.getenv("BACKUP_DIR", DEFAULT_BACKUP_DIR)
-    backup_dir = Path(raw_dir)
-    if not backup_dir.is_absolute():
-        backup_dir = _backend_root() / backup_dir
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    return backup_dir
-
-
-def _backend_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    raw_dir = os.getenv("BACKUP_DIR")
+    if raw_dir:
+        backup_dir = Path(raw_dir)
+        if not backup_dir.is_absolute():
+            backup_dir = get_data_dir() / backup_dir
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        return backup_dir
+    return get_backups_dir()
 
 
 def _resolve_storage_root(base_dir: Path) -> Path:
-    raw_root = os.getenv("STORAGE_ROOT", "storage")
-    storage_root = Path(raw_root)
-    if not storage_root.is_absolute():
-        storage_root = (base_dir / storage_root).resolve()
-    return storage_root
+    raw_root = os.getenv("STORAGE_ROOT")
+    if raw_root:
+        storage_root = Path(raw_root)
+        if not storage_root.is_absolute():
+            storage_root = (base_dir / storage_root).resolve()
+        return storage_root
+    return get_storage_dir()
 
 
 def _resolve_sqlite_path(database_url: str, base_dir: Path) -> Path:
@@ -297,12 +300,7 @@ def _dispose_engines() -> None:
 
 
 def _get_app_version() -> str:
-    try:
-        from app.version import __version__
-
-        return __version__
-    except Exception:
-        return "0.0.0"
+    return get_app_version()
 
 
 def _get_schema_version(database_url: str, db_path: Path) -> str:

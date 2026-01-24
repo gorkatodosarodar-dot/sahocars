@@ -4,7 +4,7 @@ This document records the fields, values, and formats used by the full backup an
 
 ## Full backup (POST /admin/backups)
 
-Outputs are stored in `BACKUP_DIR` (default: `backend/backups`). Each backup uses the SQLite backup API and then creates a manifest JSON and, optionally, a files zip.
+Outputs are stored in `BACKUP_DIR` (default: `%LOCALAPPDATA%\\Sahocars\\data\\backups`). Each backup uses the SQLite backup API and then creates a manifest JSON and, optionally, a files zip.
 
 Files created per backup id:
 - `backup_<YYYYMMDD>_<HHMMSS>_<suffix>.sqlite`
@@ -30,7 +30,7 @@ Manifest fields (`.manifest.json`):
 - `warnings` (array of string)
 
 Files archive (`.files.zip`):
-- Zips the entire `STORAGE_ROOT` directory (default: `backend/storage`).
+- Zips the entire `STORAGE_ROOT` directory (default: `%LOCALAPPDATA%\\Sahocars\\data\\storage`).
 - Paths are relative to `STORAGE_ROOT`.
 - Includes both `vehicles/` and `vehiculos/` subtrees if present.
 

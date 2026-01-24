@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
-import subprocess
+import sqlite3
 from uuid import uuid4
 from datetime import date, datetime
 from decimal import Decimal
@@ -12,7 +12,7 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy import Column, Enum as SAEnum, JSON, update
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from services.vehicle_expenses_service import (
@@ -25,15 +25,18 @@ from services.vehicle_events_service import emit_event, list_timeline
 from services.vehicle_finance_service import compute_vehicle_financials, get_vehicle_kpis
 from services.vehicle_status_service import change_status, list_status_events
 from services.vehicle_visits_service import create_visit, delete_visit, list_visits, update_visit
+from services.backup_service import _get_schema_version
 from services.google_calendar_service import create_or_update_event
 from routers.admin_backup import router as admin_backup_router
 from routers.admin_vehicle_transfer import router as admin_vehicle_transfer_router
 from routers.reports import router as reports_router
 from routers.google_auth import router as google_auth_router
-from app.version import __version__
+from app.config import get_app_branch, get_app_commit, get_app_version, get_database_url, get_env
+from app.logging_setup import setup_logging
+from app.paths import get_backups_dir, get_data_dir, get_db_path, get_logs_dir, get_storage_dir, migrate_legacy_data
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///sahocars.db")
-STORAGE_ROOT = Path(os.getenv("STORAGE_ROOT", "storage")).resolve()
+DATABASE_URL = get_database_url()
+STORAGE_ROOT = get_storage_dir()
 MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "20"))
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 ALLOWED_PHOTO_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
@@ -501,7 +504,10 @@ class SaleUpdate(SQLModel):
 
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if DATABASE_URL.startswith("sqlite") else create_engine(DATABASE_URL)
-app = FastAPI(title="Sahocars API", version="1.82")
+app = FastAPI(title="Sahocars API", version="1.90")
+
+_logger = setup_logging(get_env(), get_app_version(), get_app_branch(), get_app_commit())
+migrate_legacy_data(_logger)
 
 # Configurar CORS
 app.add_middleware(
@@ -520,17 +526,43 @@ app.include_router(google_auth_router)
 
 @app.get("/version")
 def get_version():
-    return {"version": __version__}
+    return _build_version_response()
 
 
 @app.get("/version/info")
 def get_version_info():
-    info = _get_git_info()
-    return {
-        "version": __version__,
-        "branch": info.get("branch"),
-        "commit": info.get("commit"),
+    return _build_version_response()
+
+
+@app.get("/health")
+def get_health():
+    checks = {
+        "db_readwrite": _check_db_rw(),
+        "storage_readwrite": _check_dir_rw(get_storage_dir()),
+        "backups_readwrite": _check_dir_rw(get_backups_dir()),
     }
+    return {
+        "ok": all(value == "ok" for value in checks.values()),
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": {
+            "app_version": get_app_version(),
+            "branch": get_app_branch(),
+            "commit": get_app_commit(),
+        },
+        "data_dir": str(get_data_dir()),
+        "db_path": str(get_db_path()),
+        "storage_dir": str(get_storage_dir()),
+        "backups_dir": str(get_backups_dir()),
+        "checks": checks,
+    }
+
+
+@app.get("/docs/readme")
+def get_readme():
+    readme_path = _get_readme_path()
+    if not readme_path.exists():
+        raise HTTPException(status_code=404, detail="README no encontrado.")
+    return Response(readme_path.read_text(encoding="utf-8"), media_type="text/markdown; charset=utf-8")
 
 
 def get_session():
@@ -674,11 +706,6 @@ def _seed_initial_status_events(session: Session) -> None:
 def on_startup():
     STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
     init_db()
-
-
-@app.get("/health")
-def healthcheck():
-    return {"status": "ok"}
 
 
 @app.get("/branches", response_model=List[Branch])
@@ -1165,28 +1192,49 @@ def _require_local_request(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Acceso solo local")
 
 
-def _get_git_info() -> dict[str, str]:
-    default_branch = os.getenv("SAHOCARS_APP_BRANCH", "unknown")
-    default_commit = os.getenv("SAHOCARS_APP_COMMIT", "unknown")
-    repo_root = Path(__file__).resolve().parents[1]
+def _build_version_response() -> dict[str, object]:
+    schema_version = None
+    db_path = get_db_path()
+    if DATABASE_URL.startswith("sqlite") and db_path.exists():
+        schema_version = _get_schema_version(DATABASE_URL, db_path)
+    return {
+        "app_version": get_app_version(),
+        "branch": get_app_branch(),
+        "commit": get_app_commit(),
+        "schema_version": schema_version,
+        "env": get_env(),
+    }
+
+
+def _get_readme_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "README.md"
+
+
+def _check_db_rw() -> str:
+    if not DATABASE_URL.startswith("sqlite"):
+        return "ok"
     try:
-        branch = subprocess.check_output(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=repo_root,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=2,
-        ).strip()
-        commit = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            cwd=repo_root,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            timeout=2,
-        ).strip()
-        return {"branch": branch or default_branch, "commit": commit or default_commit}
+        db_path = get_db_path()
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS _health_check (id INTEGER PRIMARY KEY, ts TEXT)")
+            conn.execute("INSERT INTO _health_check (ts) VALUES (?)", (datetime.utcnow().isoformat(),))
+            conn.execute("DELETE FROM _health_check")
+            conn.commit()
+        return "ok"
     except Exception:
-        return {"branch": default_branch, "commit": default_commit}
+        return "fail"
+
+
+def _check_dir_rw(path: Path) -> str:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        test_file = path / f".health_{uuid4().hex}"
+        test_file.write_text("ok", encoding="utf-8")
+        test_file.unlink(missing_ok=True)
+        return "ok"
+    except Exception:
+        return "fail"
 
 
 def vehicle_storage_key(license_plate: str) -> str:

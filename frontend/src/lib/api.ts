@@ -249,9 +249,11 @@ export type GoogleCalendarStatus = {
 };
 
 export type AppVersionInfo = {
-  version: string;
+  app_version: string;
   branch?: string | null;
   commit?: string | null;
+  env?: string | null;
+  schema_version?: string | null;
 };
 
 export type ReportFilters = {
@@ -376,6 +378,15 @@ async function fetchJson<T>(path: string, options: RequestInit = {}): Promise<T>
     console.error("Unknown error:", error);
     throw new Error("Error desconocido en la petición");
   }
+}
+
+async function fetchText(path: string, options: RequestInit = {}): Promise<string> {
+  const response = await fetch(`${API_URL}${path}`, options);
+  const detail = await response.text();
+  if (!response.ok) {
+    throw buildError(response.status, response.statusText, detail);
+  }
+  return detail;
 }
 
 function mapVehicle(vehicle: any): Vehicle {
@@ -559,7 +570,7 @@ export const api = {
     }),
   getGoogleCalendarStatus: () => fetchJson<GoogleCalendarStatus>("/auth/google/status"),
   getGoogleAuthStartUrl: () => `${API_URL}/auth/google/start`,
-  getAppVersionInfo: () => fetchJson<AppVersionInfo>("/version/info"),
+  getAppVersionInfo: () => fetchJson<AppVersionInfo>("/version"),
   listVehicleExpenses: (licensePlate: string) =>
     fetchJson<VehicleExpense[]>(`/vehicles/${encodePlate(licensePlate)}/expenses`),
   createVehicleExpense: (licensePlate: string, payload: ExpenseCreateInput) =>
@@ -741,6 +752,7 @@ export const api = {
   },
   exportCsv: (resource: "vehicles" | "expenses" | "sales") =>
     fetch(`${API_URL}/export/${resource}`),
+  getReadme: () => fetchText("/docs/readme"),
 };
 
 export function formatCurrency(value?: number | null) {
