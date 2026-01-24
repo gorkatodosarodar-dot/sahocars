@@ -36,6 +36,11 @@ sahocars-1/
 # Build / cache
 frontend/.vite/
 frontend/dist/
+backend/.pytest_cache/
+backend/.pytest_tmp/
+backend/_test_data/
+backend/_test_data2/
+backend/_py_write_test/
 
 # Archivos por lotes
 *.bat

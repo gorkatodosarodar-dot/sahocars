@@ -42,6 +42,8 @@ def get_logs_dir() -> Path:
 
 
 def migrate_legacy_data(logger=None) -> None:
+    if os.getenv("SAHOCARS_SKIP_LEGACY_MIGRATION", "").lower() == "true":
+        return
     data_dir = get_data_dir()
     repo_root = Path(__file__).resolve().parents[2]
     legacy_db = repo_root / "backend" / "sahocars.db"

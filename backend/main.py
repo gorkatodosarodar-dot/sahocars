@@ -33,6 +33,7 @@ from routers.reports import router as reports_router
 from routers.google_auth import router as google_auth_router
 from app.config import get_app_branch, get_app_commit, get_app_version, get_database_url, get_env
 from app.logging_setup import setup_logging
+from app.migrations import run_migrations
 from app.paths import get_backups_dir, get_data_dir, get_db_path, get_logs_dir, get_storage_dir, migrate_legacy_data
 
 DATABASE_URL = get_database_url()
@@ -536,10 +537,12 @@ def get_version_info():
 
 @app.get("/health")
 def get_health():
+    migrations_ok = getattr(app.state, "migrations_ok", True)
     checks = {
         "db_readwrite": _check_db_rw(),
         "storage_readwrite": _check_dir_rw(get_storage_dir()),
         "backups_readwrite": _check_dir_rw(get_backups_dir()),
+        "migrations": "ok" if migrations_ok else "fail",
     }
     return {
         "ok": all(value == "ok" for value in checks.values()),
@@ -705,6 +708,11 @@ def _seed_initial_status_events(session: Session) -> None:
 @app.on_event("startup")
 def on_startup():
     STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+    migrations_ok, migrations_error = run_migrations()
+    app.state.migrations_ok = migrations_ok
+    app.state.migrations_error = migrations_error
+    if not migrations_ok:
+        _logger.error("Error en migraciones: %s", migrations_error)
     init_db()
 
 

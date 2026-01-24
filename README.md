@@ -47,6 +47,29 @@ Endpoints utiles:
 - /health
 - /version
 
+## Migraciones (Alembic)
+
+```
+cd backend
+alembic upgrade head
+```
+
+Crear nueva migracion:
+
+```
+cd backend
+alembic revision --autogenerate -m "descripcion"
+```
+
+Si falla una migracion, revisar los logs en el data dir y volver a intentar.
+
+## Tests (backend)
+
+```
+cd backend
+pytest
+```
+
 ## Frontend (React + Vite + Mantine)
 
 ```

@@ -25,13 +25,13 @@ if not exist "%ENV_FILE%" (
   >>"%ENV_FILE%" echo SAHOCARS_PORT=8000
   >>"%ENV_FILE%" echo SAHOCARS_FRONTEND_URL=http://localhost:5173
   >>"%ENV_FILE%" echo SAHOCARS_ADMIN_ALLOW_REMOTE=false
-  >>"%ENV_FILE%" echo SAHOCARS_APP_VERSION=1.90
-  >>"%ENV_FILE%" echo SAHOCARS_APP_BRANCH=fase-9a-distribucion-instalacion
+  >>"%ENV_FILE%" echo SAHOCARS_APP_VERSION=1.91
+  >>"%ENV_FILE%" echo SAHOCARS_APP_BRANCH=fase-9b-migraciones-tests-ci
   >>"%ENV_FILE%" echo SAHOCARS_APP_COMMIT=dev
   >>"%ENV_FILE%" echo.
   >>"%ENV_FILE%" echo VITE_API_URL=http://127.0.0.1:8000
-  >>"%ENV_FILE%" echo VITE_APP_VERSION=1.90
-  >>"%ENV_FILE%" echo VITE_APP_BRANCH=fase-9a-distribucion-instalacion
+  >>"%ENV_FILE%" echo VITE_APP_VERSION=1.91
+  >>"%ENV_FILE%" echo VITE_APP_BRANCH=fase-9b-migraciones-tests-ci
   >>"%ENV_FILE%" echo VITE_APP_COMMIT=dev
 )
 
