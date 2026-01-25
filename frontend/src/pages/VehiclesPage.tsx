@@ -87,24 +87,27 @@ export default function VehiclesPage() {
 
   const rows = useMemo(
     () =>
-      vehicles.map((vehicle) => (
-        <Table.Tr
-          key={vehicle.license_plate}
-          style={{ cursor: "pointer" }}
-          onClick={() => navigate(`/vehiculos/${encodeURIComponent(vehicle.license_plate)}`)}
-          className="vehicles-table-row"
-        >
-          <Table.Td>{vehicle.license_plate || "-"}</Table.Td>
-          <Table.Td>{vehicle.brand || "-"}</Table.Td>
-          <Table.Td>{vehicle.model || "-"}</Table.Td>
-          <Table.Td>
-            {vehicle.status ? statusLabels[vehicle.status] : vehicle.state || "-"}
-          </Table.Td>
-          <Table.Td>{vehicle.location_id ? branches.find((b) => b.id === vehicle.location_id)?.name : "-"}</Table.Td>
-          <Table.Td>{formatCurrency(vehicle.sale_price)}</Table.Td>
-          <Table.Td>{formatDate(vehicle.sale_date)}</Table.Td>
-        </Table.Tr>
-      )),
+      vehicles.map((vehicle) => {
+        const routeId = vehicle.id != null ? String(vehicle.id) : vehicle.license_plate;
+        return (
+          <Table.Tr
+            key={vehicle.license_plate}
+            style={{ cursor: "pointer" }}
+            onClick={() => navigate(`/vehiculos/${encodeURIComponent(routeId)}`)}
+            className="vehicles-table-row"
+          >
+            <Table.Td>{vehicle.license_plate || "-"}</Table.Td>
+            <Table.Td>{vehicle.brand || "-"}</Table.Td>
+            <Table.Td>{vehicle.model || "-"}</Table.Td>
+            <Table.Td>
+              {vehicle.status ? statusLabels[vehicle.status] : vehicle.state || "-"}
+            </Table.Td>
+            <Table.Td>{vehicle.location_id ? branches.find((b) => b.id === vehicle.location_id)?.name : "-"}</Table.Td>
+            <Table.Td>{formatCurrency(vehicle.sale_price)}</Table.Td>
+            <Table.Td>{formatDate(vehicle.sale_date)}</Table.Td>
+          </Table.Tr>
+        );
+      }),
     [vehicles, branches, navigate]
   );
 

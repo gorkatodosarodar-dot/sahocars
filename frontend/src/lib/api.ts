@@ -3,6 +3,7 @@ const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 export type Branch = { id: number; name: string };
 
 export type Vehicle = {
+  id?: number;
   vin?: string | null;
   license_plate: string;
   brand?: string | null;
