@@ -212,6 +212,17 @@ export default function VehicleDetailPage() {
       message.includes("405")
     );
   };
+  const isDeleteFallbackError = (error: unknown) => {
+    if (!(error instanceof Error)) return false;
+    const message = (error.message || "").toLowerCase();
+    return (
+      message.includes("not found") ||
+      message.includes("no encontrado") ||
+      message.includes("404") ||
+      message.includes("method not allowed") ||
+      message.includes("405")
+    );
+  };
 
   const optionalFetch = async <T,>(promise: Promise<T>, fallback: T) => {
     try {
@@ -222,6 +233,20 @@ export default function VehicleDetailPage() {
       }
       throw error;
     }
+  };
+
+  const buildDeleteTargets = () => {
+    const targets = new Set<string>();
+    if (vehicle?.license_plate) {
+      targets.add(normalizePlateValue(vehicle.license_plate));
+    }
+    if (vehicleRouteId) {
+      targets.add(vehicleRouteId.trim());
+    }
+    if (licensePlate) {
+      targets.add(licensePlate.trim());
+    }
+    return Array.from(targets).filter((value) => value);
   };
 
   const resolveVehicleRoute = async (param: string) => {
@@ -820,21 +845,40 @@ export default function VehicleDetailPage() {
   };
 
   const handleDeleteVehicle = async () => {
-    const routeId = vehicleRouteId ?? licensePlate;
-    if (!routeId) return;
+    const targets = buildDeleteTargets();
+    if (!targets.length) return;
     const firstConfirm = window.confirm("Se va a eliminar el vehiculo y todo su historial. Continuar?");
     if (!firstConfirm) return;
     const secondConfirm = window.confirm("Estas seguro? Esta accion no se puede deshacer.");
     if (!secondConfirm) return;
     try {
       setDeletingVehicle(true);
-      await api.deleteVehicle(routeId);
+      let lastError: unknown = null;
+      for (const target of targets) {
+        try {
+          await api.deleteVehicle(target);
+          notifications.show({
+            title: "Vehiculo eliminado",
+            message: "El vehiculo y sus archivos se han eliminado",
+            color: "green",
+          });
+          navigate("/vehiculos");
+          return;
+        } catch (error) {
+          lastError = error;
+          if (!isDeleteFallbackError(error)) {
+            break;
+          }
+        }
+      }
+      if (lastError) {
+        throw lastError;
+      }
       notifications.show({
-        title: "Vehiculo eliminado",
-        message: "El vehiculo y sus archivos se han eliminado",
-        color: "green",
+        title: "Error",
+        message: "Error al eliminar vehiculo",
+        color: "red",
       });
-      navigate("/vehiculos");
     } catch (error) {
       notifications.show({
         title: "Error",

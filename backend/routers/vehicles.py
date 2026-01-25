@@ -4,6 +4,7 @@ from datetime import date, datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import inspect, text
 from sqlmodel import Session, select
 
 from db import get_session
@@ -11,6 +12,45 @@ from models.vehicle import Vehicle, VehicleStatus
 from schemas.vehicle import VehicleCreate, VehicleRead, VehicleUpdate
 
 router = APIRouter(prefix="/vehicles", tags=["vehicles"])
+
+_vehicle_has_id_column_cache: Optional[bool] = None
+
+
+def _vehicle_has_id_column(session: Session) -> bool:
+    global _vehicle_has_id_column_cache
+    if _vehicle_has_id_column_cache is not None:
+        return _vehicle_has_id_column_cache
+    try:
+        inspector = inspect(session.get_bind())
+        columns = {column["name"] for column in inspector.get_columns("vehicle")}
+        _vehicle_has_id_column_cache = "id" in columns
+    except Exception:
+        _vehicle_has_id_column_cache = False
+    return _vehicle_has_id_column_cache
+
+
+def _resolve_vehicle_identifier(session: Session, identifier: str) -> Vehicle | None:
+    normalized = identifier.strip().upper()
+    if not normalized:
+        return None
+    vehicle = session.get(Vehicle, normalized)
+    if vehicle:
+        return vehicle
+    if not identifier.isdigit() or not _vehicle_has_id_column(session):
+        return None
+    try:
+        row = session.exec(text("SELECT license_plate FROM vehicle WHERE id = :id"), {"id": int(identifier)}).first()
+    except Exception:
+        return None
+    if not row:
+        return None
+    try:
+        legacy_plate = row[0]
+    except Exception:
+        legacy_plate = row
+    if not legacy_plate:
+        return None
+    return session.get(Vehicle, str(legacy_plate).strip().upper())
 
 
 @router.post("", response_model=VehicleRead, status_code=201)
@@ -74,3 +114,13 @@ def update_vehicle(license_plate: str, data: VehicleUpdate, session: Session = D
     session.commit()
     session.refresh(vehicle)
     return vehicle
+
+
+@router.delete("/{license_plate}")
+def delete_vehicle(license_plate: str, session: Session = Depends(get_session)):
+    vehicle = _resolve_vehicle_identifier(session, license_plate)
+    if not vehicle:
+        raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+    session.delete(vehicle)
+    session.commit()
+    return {"status": "ok"}

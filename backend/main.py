@@ -13,7 +13,7 @@ from typing import List, Optional
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
-from sqlalchemy import Column, Enum as SAEnum, JSON, update
+from sqlalchemy import Column, Enum as SAEnum, JSON, inspect, text, update
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from services.vehicle_expenses_service import (
     create_expense as create_vehicle_expense_service,
@@ -506,6 +506,7 @@ class SaleUpdate(SQLModel):
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False}) if DATABASE_URL.startswith("sqlite") else create_engine(DATABASE_URL)
 app = FastAPI(title="Sahocars API", version="2.0")
+_vehicle_has_id_column_cache: Optional[bool] = None
 
 _logger = setup_logging(get_env(), get_app_version(), get_app_branch(), get_app_commit())
 migrate_legacy_data(_logger)
@@ -844,10 +845,10 @@ def update_vehicle(license_plate: str, data: VehicleUpdate, session: Session = D
 
 @app.delete("/vehicles/{license_plate}")
 def delete_vehicle(license_plate: str, session: Session = Depends(get_session)):
-    normalized_plate = normalize_plate(license_plate)
-    vehicle = session.get(Vehicle, normalized_plate)
-    if not vehicle:
+    resolved = _resolve_vehicle_identifier(session, license_plate)
+    if not resolved:
         raise HTTPException(status_code=404, detail="Vehiculo no encontrado")
+    normalized_plate, vehicle = resolved
 
     for model in (
         VehicleExpense,
@@ -1188,6 +1189,45 @@ def normalize_plate(value: str) -> str:
     if not normalized:
         raise HTTPException(status_code=422, detail="Matricula invalida")
     return normalized
+
+
+def _vehicle_has_id_column(session: Session) -> bool:
+    global _vehicle_has_id_column_cache
+    if _vehicle_has_id_column_cache is not None:
+        return _vehicle_has_id_column_cache
+    try:
+        inspector = inspect(session.get_bind())
+        columns = {column["name"] for column in inspector.get_columns("vehicle")}
+        _vehicle_has_id_column_cache = "id" in columns
+    except Exception:
+        _vehicle_has_id_column_cache = False
+    return _vehicle_has_id_column_cache
+
+
+def _resolve_vehicle_identifier(session: Session, identifier: str) -> tuple[str, Vehicle] | None:
+    normalized = normalize_plate(identifier)
+    vehicle = session.get(Vehicle, normalized)
+    if vehicle:
+        return normalized, vehicle
+    if not identifier.isdigit() or not _vehicle_has_id_column(session):
+        return None
+    try:
+        row = session.exec(text("SELECT license_plate FROM vehicle WHERE id = :id"), {"id": int(identifier)}).first()
+    except Exception:
+        return None
+    if not row:
+        return None
+    try:
+        legacy_plate = row[0]
+    except Exception:
+        legacy_plate = row
+    if not legacy_plate:
+        return None
+    normalized_legacy = normalize_plate(str(legacy_plate))
+    vehicle = session.get(Vehicle, normalized_legacy)
+    if not vehicle:
+        return None
+    return normalized_legacy, vehicle
 
 
 def _require_local_request(request: Request) -> None:
