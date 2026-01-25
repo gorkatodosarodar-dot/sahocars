@@ -202,6 +202,27 @@ export default function VehicleDetailPage() {
     const message = error.message || "";
     return message.includes("int_parsing") || message.includes("valid integer");
   };
+  const isMissingEndpointError = (error: unknown) => {
+    if (!(error instanceof Error)) return false;
+    const message = error.message || "";
+    return (
+      message.includes("Not Found") ||
+      message.includes("404") ||
+      message.includes("Method Not Allowed") ||
+      message.includes("405")
+    );
+  };
+
+  const optionalFetch = async <T,>(promise: Promise<T>, fallback: T) => {
+    try {
+      return await promise;
+    } catch (error) {
+      if (isMissingEndpointError(error)) {
+        return fallback;
+      }
+      throw error;
+    }
+  };
 
   const resolveVehicleRoute = async (param: string) => {
     const cleaned = param.trim();
@@ -254,6 +275,10 @@ export default function VehicleDetailPage() {
       );
       setFiles(merged);
     } catch (error) {
+      if (isMissingEndpointError(error)) {
+        setFiles([]);
+        return;
+      }
       notifications.show({
         title: "Error",
         message: error instanceof Error ? error.message : "Error al cargar archivos",
@@ -267,6 +292,10 @@ export default function VehicleDetailPage() {
       const data = await api.listVehicleFiles(licensePlateValue, "photo");
       setPhotos(data);
     } catch (error) {
+      if (isMissingEndpointError(error)) {
+        setPhotos([]);
+        return;
+      }
       notifications.show({
         title: "Error",
         message: error instanceof Error ? error.message : "Error al cargar fotos",
@@ -280,6 +309,10 @@ export default function VehicleDetailPage() {
       const data = await api.listVehicleSaleDocuments(licensePlateValue);
       setSaleDocuments(data);
     } catch (error) {
+      if (isMissingEndpointError(error)) {
+        setSaleDocuments([]);
+        return;
+      }
       notifications.show({
         title: "Error",
         message: error instanceof Error ? error.message : "Error al cargar documentos de venta",
@@ -293,6 +326,10 @@ export default function VehicleDetailPage() {
       const data = await api.listVehicleExpenses(licensePlateValue);
       setExpenses(data);
     } catch (error) {
+      if (isMissingEndpointError(error)) {
+        setExpenses([]);
+        return;
+      }
       notifications.show({
         title: "Error",
         message: error instanceof Error ? error.message : "Error al cargar gastos",
@@ -308,6 +345,10 @@ export default function VehicleDetailPage() {
       });
       setTimeline(data);
     } catch (error) {
+      if (isMissingEndpointError(error)) {
+        setTimeline([]);
+        return;
+      }
       notifications.show({
         title: "Error",
         message: error instanceof Error ? error.message : "Error al cargar timeline",
@@ -321,6 +362,10 @@ export default function VehicleDetailPage() {
       const data = await api.listVehicleStatusEvents(licensePlateValue, { limit: 50 });
       setStatusEvents(data);
     } catch (error) {
+      if (isMissingEndpointError(error)) {
+        setStatusEvents([]);
+        return;
+      }
       notifications.show({
         title: "Error",
         message: error instanceof Error ? error.message : "Error al cargar historial de estado",
@@ -360,6 +405,10 @@ export default function VehicleDetailPage() {
       const data = await api.listVehicleVisits(licensePlateValue);
       setVisits(data);
     } catch (error) {
+      if (isMissingEndpointError(error)) {
+        setVisits([]);
+        return;
+      }
       notifications.show({
         title: "Error",
         message: error instanceof Error ? error.message : "Error al cargar visitas",
@@ -415,13 +464,13 @@ export default function VehicleDetailPage() {
         ] = await Promise.all([
           Promise.resolve(resolved.vehicleData),
           api.getBranches(),
-          api.listVehicleLinks(routeId),
-          api.listVehicleExpenses(routeId),
-          api.listVehicleVisits(routeId),
-          api.getVehicleKpis(routeId),
-          api.getVehicleTimeline(routeId),
-          api.listVehicleStatusEvents(routeId),
-          api.getVehicleSale(routeId).catch(() => null),
+          optionalFetch(api.listVehicleLinks(routeId), []),
+          optionalFetch(api.listVehicleExpenses(routeId), []),
+          optionalFetch(api.listVehicleVisits(routeId), []),
+          optionalFetch(api.getVehicleKpis(routeId), null),
+          optionalFetch(api.getVehicleTimeline(routeId), []),
+          optionalFetch(api.listVehicleStatusEvents(routeId), []),
+          optionalFetch(api.getVehicleSale(routeId), null),
         ]);
         setVehicle(vehicleData);
         setBranches(branchesData);
