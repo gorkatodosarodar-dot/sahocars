@@ -42,6 +42,8 @@ class Vehicle(SQLModel, table=True):
     reserved_until: Optional[date] = None
     purchase_date: date
     sale_price: Optional[float] = None
+    published_price: Optional[float] = None
+    target_margin_pct: Optional[float] = None
     sale_notes: Optional[str] = None
     sale_date: Optional[date] = None
     notes: Optional[str] = None

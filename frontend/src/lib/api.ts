@@ -25,6 +25,8 @@ export type Vehicle = {
   margin_pct?: number | null;
   state?: VehicleStatus | null;
   sale_price?: number | null;
+  published_price?: number | null;
+  target_margin_pct?: number | null;
   purchase_date?: string | null;
   sale_date?: string | null;
   notes?: string | null;
@@ -500,6 +502,8 @@ export const api = {
       purchase_date: payload.purchase_date,
       sale_price: payload.sale_price,
       sale_date: payload.sale_date,
+      published_price: payload.published_price,
+      target_margin_pct: payload.target_margin_pct,
       notes: payload.notes,
     };
     return fetchJson<Vehicle>(`/vehicles/${encodePlate(licensePlate)}`, {

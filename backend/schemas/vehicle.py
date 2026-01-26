@@ -24,6 +24,8 @@ class VehicleCreate(SQLModel):
     sold_at: Optional[date] = None
     reserved_until: Optional[date] = None
     sale_notes: Optional[str] = None
+    published_price: Optional[float] = None
+    target_margin_pct: Optional[float] = None
     notes: Optional[str] = None
 
 
@@ -42,6 +44,8 @@ class VehicleRead(SQLModel):
     sold_at: Optional[date] = None
     reserved_until: Optional[date] = None
     sale_notes: Optional[str] = None
+    published_price: Optional[float] = None
+    target_margin_pct: Optional[float] = None
     version: Optional[str] = None
     color: Optional[str] = None
     notes: Optional[str] = None
@@ -72,6 +76,8 @@ class VehicleUpdate(SQLModel):
     sold_at: Optional[date] = None
     reserved_until: Optional[date] = None
     sale_notes: Optional[str] = None
+    published_price: Optional[float] = None
+    target_margin_pct: Optional[float] = None
     notes: Optional[str] = None
     sale_price: Optional[float] = None
     sale_date: Optional[date] = None

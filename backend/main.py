@@ -80,6 +80,8 @@ class Vehicle(SQLModel, table=True):
     sold_at: Optional[date] = None
     reserved_until: Optional[date] = None
     sale_price: Optional[float] = None
+    published_price: Optional[float] = None
+    target_margin_pct: Optional[float] = None
     sale_notes: Optional[str] = None
     purchase_date: Optional[date] = None
     sale_date: Optional[date] = None
@@ -284,6 +286,8 @@ class VehicleDetailOut(SQLModel):
     sold_at: Optional[date] = None
     reserved_until: Optional[date] = None
     sale_price: Optional[float] = None
+    published_price: Optional[float] = None
+    target_margin_pct: Optional[float] = None
     sale_notes: Optional[str] = None
     purchase_date: Optional[date] = None
     sale_date: Optional[date] = None
@@ -385,6 +389,8 @@ class VehicleCreate(SQLModel):
     sold_at: Optional[date] = None
     reserved_until: Optional[date] = None
     sale_notes: Optional[str] = None
+    published_price: Optional[float] = None
+    target_margin_pct: Optional[float] = None
     notes: Optional[str] = None
 
 
@@ -404,6 +410,8 @@ class VehicleUpdate(SQLModel):
     reserved_until: Optional[date] = None
     sale_notes: Optional[str] = None
     sale_price: Optional[float] = None
+    published_price: Optional[float] = None
+    target_margin_pct: Optional[float] = None
     purchase_date: Optional[date] = None
     sale_date: Optional[date] = None
     notes: Optional[str] = None
@@ -579,6 +587,7 @@ def init_db():
     _ensure_vehicle_status_schema()
     _ensure_vehicle_branch_schema()
     _ensure_vehicle_visit_schema()
+    _ensure_vehicle_pricing_schema()
     _ensure_sale_schema()
     with Session(engine) as session:
         existing = session.exec(select(Branch)).all()
@@ -671,6 +680,17 @@ def _ensure_vehicle_visit_schema() -> None:
             conn.exec_driver_sql("ALTER TABLE vehiclevisit ADD COLUMN calendar_last_synced_at DATETIME;")
         if "timezone" not in columns:
             conn.exec_driver_sql("ALTER TABLE vehiclevisit ADD COLUMN timezone TEXT;")
+
+
+def _ensure_vehicle_pricing_schema() -> None:
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(vehicle);").fetchall()}
+        if "published_price" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehicle ADD COLUMN published_price REAL;")
+        if "target_margin_pct" not in columns:
+            conn.exec_driver_sql("ALTER TABLE vehicle ADD COLUMN target_margin_pct REAL;")
 
 
 def _ensure_sale_schema() -> None:

@@ -110,6 +110,8 @@ export default function VehicleDetailPage() {
   const [saleDate, setSaleDate] = useState<Date | null>(null);
   const [saleNotes, setSaleNotes] = useState("");
   const [saleId, setSaleId] = useState<number | null>(null);
+  const [publishedPrice, setPublishedPrice] = useState<number | null>(null);
+  const [targetMarginPct, setTargetMarginPct] = useState<number | null>(null);
   const [savingSale, setSavingSale] = useState(false);
   const [saleDocuments, setSaleDocuments] = useState<SaleDocument[]>([]);
   const [saleDocumentNotes, setSaleDocumentNotes] = useState("");
@@ -529,6 +531,8 @@ export default function VehicleDetailPage() {
         setVehicleVersion(vehicleData.version ?? "");
         setVehicleYear(vehicleData.year ?? null);
         setVehicleNotes(vehicleData.notes ?? "");
+        setPublishedPrice(vehicleData.published_price ?? null);
+        setTargetMarginPct(vehicleData.target_margin_pct ?? null);
         setSaleId(saleData?.id ?? null);
         setSalePrice(vehicleData.sale_price ?? null);
         setSaleDate(
@@ -779,6 +783,8 @@ export default function VehicleDetailPage() {
         year: vehicleYear ?? undefined,
         km: vehicleKm ?? undefined,
         color: vehicleColor.trim() || undefined,
+        published_price: publishedPrice ?? undefined,
+        target_margin_pct: targetMarginPct ?? undefined,
         notes: vehicleNotes.trim() || undefined,
       });
       setVehicle(updated);
@@ -791,6 +797,8 @@ export default function VehicleDetailPage() {
       setVehicleVersion(updated.version ?? "");
       setVehicleYear(updated.year ?? null);
       setVehicleNotes(updated.notes ?? "");
+      setPublishedPrice(updated.published_price ?? null);
+      setTargetMarginPct(updated.target_margin_pct ?? null);
       notifications.show({
         title: "Exito",
         message: "Datos actualizados correctamente",
@@ -1340,6 +1348,10 @@ export default function VehicleDetailPage() {
   }, 0);
   const totalExpenses = vehicle?.total_expenses ?? purchaseTotal + otherExpensesTotal;
   const salePriceValue = salePrice ?? vehicle?.sale_price ?? null;
+  const suggestedSalePrice =
+    targetMarginPct !== null && totalExpenses !== null && !Number.isNaN(totalExpenses)
+      ? totalExpenses * (1 + targetMarginPct / 100)
+      : null;
   const profitValue =
     vehicle?.profit ?? (salePriceValue !== null ? salePriceValue - totalExpenses : null);
   const marginPctValue =
@@ -1460,6 +1472,34 @@ export default function VehicleDetailPage() {
                     label="Notas"
                     value={vehicleNotes}
                     onChange={(e) => setVehicleNotes(e.currentTarget.value)}
+                  />
+                </Group>
+                <Group grow>
+                  <NumberInput
+                    label="Margen % sobre coste"
+                    value={targetMarginPct ?? undefined}
+                    onChange={(value) => setTargetMarginPct(typeof value === "number" ? value : null)}
+                    min={0}
+                    decimalScale={2}
+                    decimalSeparator=","
+                    thousandSeparator="."
+                  />
+                  <NumberInput
+                    label="Precio sugerido"
+                    value={suggestedSalePrice ?? undefined}
+                    readOnly
+                    decimalScale={2}
+                    decimalSeparator=","
+                    thousandSeparator="."
+                  />
+                  <NumberInput
+                    label="Precio publicado"
+                    value={publishedPrice ?? undefined}
+                    onChange={(value) => setPublishedPrice(typeof value === "number" ? value : null)}
+                    min={0}
+                    decimalScale={2}
+                    decimalSeparator=","
+                    thousandSeparator="."
                   />
                 </Group>
                 <Group grow>
