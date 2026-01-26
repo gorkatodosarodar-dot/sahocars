@@ -89,6 +89,12 @@ export default function VehiclesPage() {
     () =>
       vehicles.map((vehicle) => {
         const routeId = vehicle.id != null ? String(vehicle.id) : vehicle.license_plate;
+        const totalExpenses = vehicle.total_expenses ?? null;
+        const targetMargin = vehicle.target_margin_pct ?? null;
+        const suggestedPrice =
+          totalExpenses !== null && targetMargin !== null
+            ? totalExpenses * (1 + targetMargin / 100)
+            : null;
         return (
           <Table.Tr
             key={vehicle.license_plate}
@@ -103,6 +109,8 @@ export default function VehiclesPage() {
               {vehicle.status ? statusLabels[vehicle.status] : vehicle.state || "-"}
             </Table.Td>
             <Table.Td>{vehicle.location_id ? branches.find((b) => b.id === vehicle.location_id)?.name : "-"}</Table.Td>
+            <Table.Td>{suggestedPrice !== null ? formatCurrency(suggestedPrice) : "-"}</Table.Td>
+            <Table.Td>{formatCurrency(vehicle.published_price)}</Table.Td>
             <Table.Td>{formatCurrency(vehicle.sale_price)}</Table.Td>
             <Table.Td>{formatDate(vehicle.sale_date)}</Table.Td>
           </Table.Tr>
@@ -213,6 +221,8 @@ export default function VehiclesPage() {
               <Table.Th>Modelo</Table.Th>
               <Table.Th>Estado</Table.Th>
               <Table.Th>Sucursal</Table.Th>
+              <Table.Th>Precio sugerido</Table.Th>
+              <Table.Th>Precio publicado</Table.Th>
               <Table.Th>Venta</Table.Th>
               <Table.Th>Fecha venta</Table.Th>
             </Table.Tr>
@@ -222,7 +232,7 @@ export default function VehiclesPage() {
               rows
             ) : (
               <Table.Tr>
-                <Table.Td colSpan={8}>
+                <Table.Td colSpan={9}>
                   <Text c="dimmed">No hay vehículos</Text>
                 </Table.Td>
               </Table.Tr>

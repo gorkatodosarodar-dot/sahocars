@@ -1348,6 +1348,7 @@ export default function VehicleDetailPage() {
   }, 0);
   const totalExpenses = vehicle?.total_expenses ?? purchaseTotal + otherExpensesTotal;
   const salePriceValue = salePrice ?? vehicle?.sale_price ?? null;
+  const publishedPriceValue = publishedPrice ?? vehicle?.published_price ?? null;
   const suggestedSalePrice =
     targetMarginPct !== null && totalExpenses !== null && !Number.isNaN(totalExpenses)
       ? totalExpenses * (1 + targetMarginPct / 100)
@@ -1631,6 +1632,22 @@ export default function VehicleDetailPage() {
                     Precio de venta
                   </Text>
                   <Text fw={500}>{salePriceValue !== null ? formatCurrency(salePriceValue) : "-"}</Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Precio sugerido
+                  </Text>
+                  <Text fw={500}>
+                    {suggestedSalePrice !== null ? formatCurrency(suggestedSalePrice) : "-"}
+                  </Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Precio publicado
+                  </Text>
+                  <Text fw={500}>
+                    {publishedPriceValue !== null ? formatCurrency(publishedPriceValue) : "-"}
+                  </Text>
                 </Group>
                 <Group justify="space-between">
                   <Text size="sm" c="dimmed">

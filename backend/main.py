@@ -807,7 +807,7 @@ def create_vehicle(vehicle_data: VehicleCreate, session: Session = Depends(get_s
         raise HTTPException(status_code=400, detail=f"Error al crear vehículo: {str(e)}")
 
 
-@app.get("/vehicles", response_model=List[Vehicle])
+@app.get("/vehicles", response_model=List[VehicleDetailOut])
 def list_vehicles(
     state: Optional[VehicleStatus] = None,
     branch_id: Optional[int] = None,
@@ -826,7 +826,8 @@ def list_vehicles(
         if to_date:
             query = query.where(Vehicle.purchase_date <= to_date)
         query = query.order_by(Vehicle.created_at.desc())
-        return session.exec(query).all()
+        vehicles = session.exec(query).all()
+        return [_build_vehicle_detail(session, vehicle) for vehicle in vehicles]
     except Exception as e:
         print(f"Error en list_vehicles: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error al listar vehículos: {str(e)}")
