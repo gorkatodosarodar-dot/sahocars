@@ -51,5 +51,6 @@ release/Sahocars/backend/_pytest_tmp/
 !install.bat
 !start.bat
 !start_sahocars.bat
+!start_sahocars_auto.bat
 !update.bat
 !rollback.bat
