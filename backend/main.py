@@ -1760,6 +1760,8 @@ def export_vehicles(session: Session = Depends(get_session)):
         "branch_id",
         "status",
         "purchase_date",
+        "target_margin_pct",
+        "published_price",
         "sale_price",
         "sale_date",
     ]
@@ -1777,6 +1779,8 @@ def export_vehicles(session: Session = Depends(get_session)):
             str(v.branch_id or ""),
             v.status or "",
             v.purchase_date.isoformat() if v.purchase_date else "",
+            str(v.target_margin_pct if v.target_margin_pct is not None else ""),
+            str(v.published_price if v.published_price is not None else ""),
             str(v.sale_price or ""),
             v.sale_date.isoformat() if v.sale_date else "",
         ]
