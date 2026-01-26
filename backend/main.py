@@ -579,6 +579,7 @@ def init_db():
     _ensure_vehicle_status_schema()
     _ensure_vehicle_branch_schema()
     _ensure_vehicle_visit_schema()
+    _ensure_sale_schema()
     with Session(engine) as session:
         existing = session.exec(select(Branch)).all()
         if not existing:
@@ -670,6 +671,25 @@ def _ensure_vehicle_visit_schema() -> None:
             conn.exec_driver_sql("ALTER TABLE vehiclevisit ADD COLUMN calendar_last_synced_at DATETIME;")
         if "timezone" not in columns:
             conn.exec_driver_sql("ALTER TABLE vehiclevisit ADD COLUMN timezone TEXT;")
+
+
+def _ensure_sale_schema() -> None:
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    with engine.begin() as conn:
+        columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(sale);").fetchall()}
+        if "client_name" not in columns:
+            conn.exec_driver_sql("ALTER TABLE sale ADD COLUMN client_name TEXT;")
+        if "client_tax_id" not in columns:
+            conn.exec_driver_sql("ALTER TABLE sale ADD COLUMN client_tax_id TEXT;")
+        if "client_phone" not in columns:
+            conn.exec_driver_sql("ALTER TABLE sale ADD COLUMN client_phone TEXT;")
+        if "client_email" not in columns:
+            conn.exec_driver_sql("ALTER TABLE sale ADD COLUMN client_email TEXT;")
+        if "client_address" not in columns:
+            conn.exec_driver_sql("ALTER TABLE sale ADD COLUMN client_address TEXT;")
+        if "created_at" not in columns:
+            conn.exec_driver_sql("ALTER TABLE sale ADD COLUMN created_at DATETIME;")
 
 
 def _get_default_branch_id(session: Session) -> Optional[int]:
