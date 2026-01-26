@@ -117,6 +117,29 @@ if "%GIT_SYNC%"=="1" (
 popd >>"%LOG%" 2>&1
 
 REM ============================
+REM VERSION ENV (best effort)
+REM ============================
+set "GIT_BRANCH="
+set "GIT_COMMIT="
+where git >nul 2>&1
+if not errorlevel 1 (
+  pushd "%ROOT%" >nul
+  for /f "delims=" %%i in ('git rev-parse --abbrev-ref HEAD 2^>nul') do set "GIT_BRANCH=%%i"
+  for /f "delims=" %%i in ('git rev-parse --short HEAD 2^>nul') do set "GIT_COMMIT=%%i"
+  popd >nul
+)
+if not defined SAHOCARS_BRANCH if defined GIT_BRANCH set "SAHOCARS_BRANCH=%GIT_BRANCH%"
+if not defined SAHOCARS_COMMIT if defined GIT_COMMIT set "SAHOCARS_COMMIT=%GIT_COMMIT%"
+if not defined SAHOCARS_BRANCH set "SAHOCARS_BRANCH=local"
+if not defined SAHOCARS_COMMIT set "SAHOCARS_COMMIT=unknown"
+if not defined SAHOCARS_APP_BRANCH set "SAHOCARS_APP_BRANCH=%SAHOCARS_BRANCH%"
+if not defined SAHOCARS_APP_COMMIT set "SAHOCARS_APP_COMMIT=%SAHOCARS_COMMIT%"
+if defined GIT_BRANCH if /I not "%GIT_BRANCH%"=="validaciones" (
+  echo WARNING: Rama actual "%GIT_BRANCH%". La rama de trabajo recomendada es "validaciones".
+  >>"%LOG%" echo WARNING: Rama actual "%GIT_BRANCH%". La rama de trabajo recomendada es "validaciones".
+)
+
+REM ============================
 REM BACKEND: VENV + DEPS
 REM ============================
 >>"%LOG%" echo --- BACKEND ---

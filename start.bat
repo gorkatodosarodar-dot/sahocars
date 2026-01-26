@@ -28,14 +28,20 @@ if not errorlevel 1 (
   for /f "delims=" %%i in ('git rev-parse --short HEAD 2^>nul') do set "GIT_COMMIT=%%i"
   popd >nul
 )
-if not defined SAHOCARS_APP_BRANCH if defined GIT_BRANCH set "SAHOCARS_APP_BRANCH=%GIT_BRANCH%"
-if not defined SAHOCARS_APP_COMMIT if defined GIT_COMMIT set "SAHOCARS_APP_COMMIT=%GIT_COMMIT%"
-if not defined SAHOCARS_APP_BRANCH set "SAHOCARS_APP_BRANCH=local"
-if not defined SAHOCARS_APP_COMMIT set "SAHOCARS_APP_COMMIT=unknown"
+if not defined SAHOCARS_BRANCH if defined GIT_BRANCH set "SAHOCARS_BRANCH=%GIT_BRANCH%"
+if not defined SAHOCARS_COMMIT if defined GIT_COMMIT set "SAHOCARS_COMMIT=%GIT_COMMIT%"
+if not defined SAHOCARS_BRANCH set "SAHOCARS_BRANCH=local"
+if not defined SAHOCARS_COMMIT set "SAHOCARS_COMMIT=unknown"
+if not defined SAHOCARS_APP_BRANCH set "SAHOCARS_APP_BRANCH=%SAHOCARS_BRANCH%"
+if not defined SAHOCARS_APP_COMMIT set "SAHOCARS_APP_COMMIT=%SAHOCARS_COMMIT%"
+
+if defined GIT_BRANCH if /I not "%GIT_BRANCH%"=="validaciones" (
+  echo WARNING: Rama actual "%GIT_BRANCH%". La rama de trabajo recomendada es "validaciones".
+)
 
 if not defined VITE_APP_VERSION set "VITE_APP_VERSION=%SAHOCARS_APP_VERSION%"
-if not defined VITE_APP_BRANCH set "VITE_APP_BRANCH=%SAHOCARS_APP_BRANCH%"
-if not defined VITE_APP_COMMIT set "VITE_APP_COMMIT=%SAHOCARS_APP_COMMIT%"
+if not defined VITE_APP_BRANCH set "VITE_APP_BRANCH=%SAHOCARS_BRANCH%"
+if not defined VITE_APP_COMMIT set "VITE_APP_COMMIT=%SAHOCARS_COMMIT%"
 if not defined VITE_API_URL set "VITE_API_URL=http://%SAHOCARS_HOST%:%SAHOCARS_PORT%"
 
 set "WEB_HOST=127.0.0.1"

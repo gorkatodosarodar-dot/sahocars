@@ -52,5 +52,7 @@ release/Sahocars/backend/_pytest_tmp/
 !start.bat
 !start_sahocars.bat
 !start_sahocars_auto.bat
+!backend/start_backend.bat
+!tools/sync_validaciones.bat
 !update.bat
 !rollback.bat

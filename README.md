@@ -33,6 +33,13 @@ start.bat
 El arranque lee .env.local (si existe) y exporta SAHOCARS_* y VITE_*.
 Usa los archivos .env.example de cada carpeta como referencia.
 
+## Flujo de trabajo recomendado
+
+- Rama de trabajo oficial: `validaciones` (cuelga de la linea v2.0 `fase-9c-packaging-update-rollback`).
+- Actualizar repo de forma segura: ejecutar `tools\\sync_validaciones.bat`.
+- Prohibido: `git pull` sin `--ff-only` (evita merges raros).
+- Si `validaciones` apunta a `main`: `git reset --hard origin/validaciones`.
+
 ## Backend (FastAPI + SQLite)
 
 ```
