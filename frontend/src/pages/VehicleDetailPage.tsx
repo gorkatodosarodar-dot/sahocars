@@ -212,6 +212,16 @@ export default function VehicleDetailPage() {
       message.includes("405")
     );
   };
+  const isOptionalNotFoundError = (error: unknown) => {
+    if (!(error instanceof Error)) return false;
+    const message = (error.message || "").toLowerCase();
+    return (
+      message.includes("venta no encontrada") ||
+      message.includes("no encontrada") ||
+      message.includes("no encontrado") ||
+      message.includes("404")
+    );
+  };
   const isDeleteFallbackError = (error: unknown) => {
     if (!(error instanceof Error)) return false;
     const message = (error.message || "").toLowerCase();
@@ -228,7 +238,7 @@ export default function VehicleDetailPage() {
     try {
       return await promise;
     } catch (error) {
-      if (isMissingEndpointError(error)) {
+      if (isMissingEndpointError(error) || isOptionalNotFoundError(error)) {
         return fallback;
       }
       throw error;
