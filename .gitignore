@@ -56,3 +56,6 @@ release/Sahocars/backend/_pytest_tmp/
 !tools/sync_validaciones.bat
 !update.bat
 !rollback.bat
+
+.local/
+
